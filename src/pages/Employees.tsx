@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Search, Eye, Edit } from "lucide-react";
+import { Plus, Search, Eye, Edit, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { employees } from "@/lib/mockData";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useEmployees } from "@/lib/store";
+import { EmployeeForm } from "@/components/forms/EmployeeForm";
+import { Employee } from "@/types";
+import { useToast } from "@/hooks/use-toast";
 
 const statusClass: Record<string, string> = {
   Active: "bg-success/10 text-success border-0",
@@ -20,9 +22,44 @@ const statusClass: Record<string, string> = {
 
 const Employees = () => {
   const [search, setSearch] = useState("");
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | undefined>();
+  const { employees, addEmployee, updateEmployee, deleteEmployee } = useEmployees();
+  const { toast } = useToast();
+
   const filtered = employees.filter(
-    (e) => e.name.toLowerCase().includes(search.toLowerCase()) || e.department.toLowerCase().includes(search.toLowerCase())
+    (e) => e.name.toLowerCase().includes(search.toLowerCase()) || 
+           e.department.toLowerCase().includes(search.toLowerCase()) ||
+           e.email.toLowerCase().includes(search.toLowerCase())
   );
+
+  const handleAdd = (data: Omit<Employee, "id" | "initials">) => {
+    addEmployee(data);
+    setIsAddDialogOpen(false);
+    toast({
+      title: "Success",
+      description: "Employee added successfully",
+    });
+  };
+
+  const handleUpdate = (data: Omit<Employee, "id" | "initials">) => {
+    if (editingEmployee) {
+      updateEmployee(editingEmployee.id, data);
+      setEditingEmployee(undefined);
+      toast({
+        title: "Success",
+        description: "Employee updated successfully",
+      });
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    deleteEmployee(id);
+    toast({
+      title: "Success",
+      description: "Employee deactivated successfully",
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -31,34 +68,15 @@ const Employees = () => {
           <h1 className="text-2xl font-bold tracking-tight">Employees</h1>
           <p className="text-muted-foreground">Manage your team members</p>
         </div>
-        <Dialog>
+        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
             <Button><Plus className="h-4 w-4 mr-2" />Add Employee</Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle>Add New Employee</DialogTitle></DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><Label>First Name</Label><Input placeholder="John" /></div>
-                <div className="space-y-2"><Label>Last Name</Label><Input placeholder="Doe" /></div>
-              </div>
-              <div className="space-y-2"><Label>Email</Label><Input type="email" placeholder="john@novahr.com" /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Department</Label>
-                  <Select><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                    <SelectContent>
-                      {["Engineering", "Marketing", "Human Resources", "Finance", "Sales", "Design"].map(d => (
-                        <SelectItem key={d} value={d.toLowerCase()}>{d}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2"><Label>Job Title</Label><Input placeholder="Developer" /></div>
-              </div>
-              <div className="space-y-2"><Label>Phone</Label><Input placeholder="+1 (555) 000-0000" /></div>
-              <Button className="w-full mt-2">Add Employee</Button>
-            </div>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Add New Employee</DialogTitle>
+            </DialogHeader>
+            <EmployeeForm onSubmit={handleAdd} onCancel={() => setIsAddDialogOpen(false)} />
           </DialogContent>
         </Dialog>
       </div>
@@ -104,8 +122,41 @@ const Employees = () => {
                     <TableCell><Badge variant="secondary" className={statusClass[emp.status]}>{emp.status}</Badge></TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" asChild><Link to={`/employees/${emp.id}`}><Eye className="h-4 w-4" /></Link></Button>
-                        <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" asChild>
+                          <Link to={`/employees/${emp.id}`}><Eye className="h-4 w-4" /></Link>
+                        </Button>
+                        <Dialog open={editingEmployee?.id === emp.id} onOpenChange={(open) => !open && setEditingEmployee(undefined)}>
+                          <DialogTrigger asChild>
+                            <Button variant="ghost" size="icon" onClick={() => setEditingEmployee(emp)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                            <DialogHeader>
+                              <DialogTitle>Edit Employee</DialogTitle>
+                            </DialogHeader>
+                            <EmployeeForm employee={emp} onSubmit={handleUpdate} onCancel={() => setEditingEmployee(undefined)} />
+                          </DialogContent>
+                        </Dialog>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Deactivate Employee</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to deactivate {emp.name}? This action can be reversed later.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleDelete(emp.id)}>Deactivate</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </TableCell>
                   </TableRow>
