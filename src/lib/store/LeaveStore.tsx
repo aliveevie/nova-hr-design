@@ -1,59 +1,75 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { LeaveRequest, LeaveBalance } from "@/types";
-import { leaveRequests as initialLeaveRequests, leaveBalances as initialLeaveBalances } from "@/lib/mockData";
+import { leaveApi } from "@/lib/api";
 
 interface LeaveContextType {
   leaveRequests: LeaveRequest[];
   leaveBalances: LeaveBalance[];
-  addLeaveRequest: (leave: Omit<LeaveRequest, "id">) => void;
-  updateLeaveRequest: (id: string, leave: Partial<LeaveRequest>) => void;
-  deleteLeaveRequest: (id: string) => void;
-  getLeaveBalance: (employeeId: string) => LeaveBalance | undefined;
-  updateLeaveBalance: (employeeId: string, balance: Partial<LeaveBalance>) => void;
+  addLeaveRequest: (leave: Omit<LeaveRequest, "id" | "employee" | "days" | "status">) => Promise<void>;
+  updateLeaveRequest: (id: string, status: "Approved" | "Rejected" | "Pending") => Promise<void>;
+  deleteLeaveRequest: (id: string) => Promise<void>;
+  getLeaveBalance: (employeeId: string) => Promise<LeaveBalance | undefined>;
+  refreshLeaveRequests: () => Promise<void>;
 }
 
 const LeaveContext = createContext<LeaveContextType | undefined>(undefined);
 
 export const LeaveProvider = ({ children }: { children: ReactNode }) => {
-  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(initialLeaveRequests);
-  const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>(initialLeaveBalances);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
 
-  const addLeaveRequest = (leave: Omit<LeaveRequest, "id">) => {
-    const newLeave: LeaveRequest = {
-      ...leave,
-      id: String(leaveRequests.length + 1),
-    };
-    setLeaveRequests([...leaveRequests, newLeave]);
-  };
-
-  const updateLeaveRequest = (id: string, updates: Partial<LeaveRequest>) => {
-    setLeaveRequests(leaveRequests.map((l) => (l.id === id ? { ...l, ...updates } : l)));
-  };
-
-  const deleteLeaveRequest = (id: string) => {
-    setLeaveRequests(leaveRequests.filter((l) => l.id !== id));
-  };
-
-  const getLeaveBalance = (employeeId: string) => {
-    let balance = leaveBalances.find((b) => b.employeeId === employeeId);
-    // Auto-create balance if it doesn't exist
-    if (!balance) {
-      balance = {
-        employeeId,
-        annualLeave: 20, // Default annual leave
-        sickLeave: 10, // Default sick leave
-        maternityLeave: 0,
-        casualLeave: 5, // Default casual leave
-      };
-      setLeaveBalances([...leaveBalances, balance]);
+  const refreshLeaveRequests = async () => {
+    try {
+      const response = await leaveApi.getRequests();
+      setLeaveRequests(response.leaveRequests);
+    } catch (error) {
+      console.error("Error fetching leave requests:", error);
     }
-    return balance;
   };
 
-  const updateLeaveBalance = (employeeId: string, balance: Partial<LeaveBalance>) => {
-    setLeaveBalances(
-      leaveBalances.map((b) => (b.employeeId === employeeId ? { ...b, ...balance } : b))
-    );
+  useEffect(() => {
+    refreshLeaveRequests();
+  }, []);
+
+  const addLeaveRequest = async (leave: Omit<LeaveRequest, "id" | "employee" | "days" | "status">) => {
+    try {
+      const response = await leaveApi.createRequest(leave);
+      setLeaveRequests([...leaveRequests, response.leaveRequest]);
+    } catch (error) {
+      console.error("Error adding leave request:", error);
+      throw error;
+    }
+  };
+
+  const updateLeaveRequest = async (id: string, status: "Approved" | "Rejected" | "Pending") => {
+    try {
+      const response = await leaveApi.updateRequest(id, status);
+      setLeaveRequests(leaveRequests.map((l) => (l.id === id ? response.leaveRequest : l)));
+    } catch (error) {
+      console.error("Error updating leave request:", error);
+      throw error;
+    }
+  };
+
+  const deleteLeaveRequest = async (id: string) => {
+    try {
+      setLeaveRequests(leaveRequests.filter((l) => l.id !== id));
+    } catch (error) {
+      console.error("Error deleting leave request:", error);
+      throw error;
+    }
+  };
+
+  const getLeaveBalance = async (employeeId: string) => {
+    try {
+      const response = await leaveApi.getBalance(employeeId);
+      const balance = response.balance;
+      setLeaveBalances(leaveBalances.filter((b) => b.employeeId !== employeeId).concat([balance]));
+      return balance;
+    } catch (error) {
+      console.error("Error fetching leave balance:", error);
+      return undefined;
+    }
   };
 
   return (
@@ -65,7 +81,7 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
         updateLeaveRequest,
         deleteLeaveRequest,
         getLeaveBalance,
-        updateLeaveBalance,
+        refreshLeaveRequests,
       }}
     >
       {children}
@@ -80,4 +96,3 @@ export const useLeave = () => {
   }
   return context;
 };
-

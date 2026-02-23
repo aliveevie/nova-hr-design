@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #10b981; color: white; padding: 20px; text-align: center; }
+    .content { background-color: #f9fafb; padding: 20px; }
+    .info-box { background-color: white; padding: 15px; margin: 10px 0; border-left: 4px solid #10b981; }
+    .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Leave Request Approved</h1>
+    </div>
+    <div class="content">
+      <p>Dear {{employeeName}},</p>
+      <p>Your leave request has been <strong>approved</strong>.</p>
+      
+      <div class="info-box">
+        <strong>Leave Type:</strong> {{leaveType}}<br>
+        <strong>From:</strong> {{fromDate}}<br>
+        <strong>To:</strong> {{toDate}}
+      </div>
+      
+      <p>Please ensure all your work is properly handed over before your leave period.</p>
+    </div>
+    <div class="footer">
+      <p>This is an automated email from NovaHR System</p>
+    </div>
+  </div>
+</body>
+</html>
+

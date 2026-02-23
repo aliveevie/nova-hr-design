@@ -1,34 +1,62 @@
-import { createContext, useContext, useState, ReactNode } from "react";
-import { Training } from "@/types";
-import { trainingRecords as initialTraining } from "@/lib/mockData";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { TrainingRecord } from "@/types";
+import { trainingApi } from "@/lib/api";
 
 interface TrainingContextType {
-  trainings: Training[];
-  addTraining: (training: Omit<Training, "id">) => void;
-  updateTraining: (id: string, training: Partial<Training>) => void;
-  deleteTraining: (id: string) => void;
-  getTrainingByEmployee: (employeeId: string) => Training[];
+  trainings: TrainingRecord[];
+  addTraining: (training: Omit<TrainingRecord, "id" | "employee">) => Promise<void>;
+  updateTraining: (id: string, training: Partial<TrainingRecord>) => Promise<void>;
+  deleteTraining: (id: string) => Promise<void>;
+  getTrainingByEmployee: (employeeId: string) => TrainingRecord[];
+  refreshTrainings: () => Promise<void>;
 }
 
 const TrainingContext = createContext<TrainingContextType | undefined>(undefined);
 
 export const TrainingProvider = ({ children }: { children: ReactNode }) => {
-  const [trainings, setTrainings] = useState<Training[]>(initialTraining);
+  const [trainings, setTrainings] = useState<TrainingRecord[]>([]);
 
-  const addTraining = (training: Omit<Training, "id">) => {
-    const newTraining: Training = {
-      ...training,
-      id: String(trainings.length + 1),
-    };
-    setTrainings([...trainings, newTraining]);
+  const refreshTrainings = async () => {
+    try {
+      const response = await trainingApi.getAll();
+      setTrainings(response.trainings);
+    } catch (error) {
+      console.error("Error fetching trainings:", error);
+    }
   };
 
-  const updateTraining = (id: string, updates: Partial<Training>) => {
-    setTrainings(trainings.map((t) => (t.id === id ? { ...t, ...updates } : t)));
+  useEffect(() => {
+    refreshTrainings();
+  }, []);
+
+  const addTraining = async (training: Omit<TrainingRecord, "id" | "employee">) => {
+    try {
+      const response = await trainingApi.create(training);
+      setTrainings([...trainings, response.training]);
+    } catch (error) {
+      console.error("Error adding training:", error);
+      throw error;
+    }
   };
 
-  const deleteTraining = (id: string) => {
-    setTrainings(trainings.filter((t) => t.id !== id));
+  const updateTraining = async (id: string, updates: Partial<TrainingRecord>) => {
+    try {
+      const response = await trainingApi.update(id, updates);
+      setTrainings(trainings.map((t) => (t.id === id ? response.training : t)));
+    } catch (error) {
+      console.error("Error updating training:", error);
+      throw error;
+    }
+  };
+
+  const deleteTraining = async (id: string) => {
+    try {
+      await trainingApi.delete(id);
+      setTrainings(trainings.filter((t) => t.id !== id));
+    } catch (error) {
+      console.error("Error deleting training:", error);
+      throw error;
+    }
   };
 
   const getTrainingByEmployee = (employeeId: string) => {
@@ -37,13 +65,7 @@ export const TrainingProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <TrainingContext.Provider
-      value={{
-        trainings,
-        addTraining,
-        updateTraining,
-        deleteTraining,
-        getTrainingByEmployee,
-      }}
+      value={{ trainings, addTraining, updateTraining, deleteTraining, getTrainingByEmployee, refreshTrainings }}
     >
       {children}
     </TrainingContext.Provider>
@@ -57,4 +79,3 @@ export const useTraining = () => {
   }
   return context;
 };
-

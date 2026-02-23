@@ -1,35 +1,62 @@
-import { createContext, useContext, useState, ReactNode } from "react";
-import { Attendance } from "@/types";
-import { attendanceRecords as initialAttendance } from "@/lib/mockData";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { AttendanceRecord } from "@/types";
+import { attendanceApi } from "@/lib/api";
 
 interface AttendanceContextType {
-  attendanceRecords: Attendance[];
-  addAttendance: (attendance: Omit<Attendance, "id">) => void;
-  updateAttendance: (id: string, attendance: Partial<Attendance>) => void;
-  deleteAttendance: (id: string) => void;
-  getAttendanceByEmployee: (employeeId: string) => Attendance[];
-  getAttendanceByDate: (date: string) => Attendance[];
+  attendanceRecords: AttendanceRecord[];
+  addAttendance: (attendance: Omit<AttendanceRecord, "id">) => Promise<void>;
+  updateAttendance: (id: string, attendance: Partial<AttendanceRecord>) => Promise<void>;
+  deleteAttendance: (id: string) => Promise<void>;
+  getAttendanceByEmployee: (employeeId: string) => AttendanceRecord[];
+  getAttendanceByDate: (date: string) => AttendanceRecord[];
+  refreshAttendance: () => Promise<void>;
 }
 
 const AttendanceContext = createContext<AttendanceContextType | undefined>(undefined);
 
 export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
-  const [attendanceRecords, setAttendanceRecords] = useState<Attendance[]>(initialAttendance);
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
 
-  const addAttendance = (attendance: Omit<Attendance, "id">) => {
-    const newAttendance: Attendance = {
-      ...attendance,
-      id: String(attendanceRecords.length + 1),
-    };
-    setAttendanceRecords([...attendanceRecords, newAttendance]);
+  const refreshAttendance = async () => {
+    try {
+      const response = await attendanceApi.getAll();
+      setAttendanceRecords(response.attendance);
+    } catch (error) {
+      console.error("Error fetching attendance:", error);
+    }
   };
 
-  const updateAttendance = (id: string, updates: Partial<Attendance>) => {
-    setAttendanceRecords(attendanceRecords.map((att) => (att.id === id ? { ...att, ...updates } : att)));
+  useEffect(() => {
+    refreshAttendance();
+  }, []);
+
+  const addAttendance = async (attendance: Omit<AttendanceRecord, "id">) => {
+    try {
+      const response = await attendanceApi.update("", attendance);
+      await refreshAttendance();
+    } catch (error) {
+      console.error("Error adding attendance:", error);
+      throw error;
+    }
   };
 
-  const deleteAttendance = (id: string) => {
-    setAttendanceRecords(attendanceRecords.filter((att) => att.id !== id));
+  const updateAttendance = async (id: string, updates: Partial<AttendanceRecord>) => {
+    try {
+      await attendanceApi.update(id, updates);
+      await refreshAttendance();
+    } catch (error) {
+      console.error("Error updating attendance:", error);
+      throw error;
+    }
+  };
+
+  const deleteAttendance = async (id: string) => {
+    try {
+      setAttendanceRecords(attendanceRecords.filter((att) => att.id !== id));
+    } catch (error) {
+      console.error("Error deleting attendance:", error);
+      throw error;
+    }
   };
 
   const getAttendanceByEmployee = (employeeId: string) => {
@@ -49,6 +76,7 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
         deleteAttendance,
         getAttendanceByEmployee,
         getAttendanceByDate,
+        refreshAttendance,
       }}
     >
       {children}
@@ -63,4 +91,3 @@ export const useAttendance = () => {
   }
   return context;
 };
-

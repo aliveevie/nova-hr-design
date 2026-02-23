@@ -1,0 +1,25 @@
+{
+  "users": [
+    {
+      "id": "1",
+      "name": "Mariya Abubakar",
+      "email": "mabubakar@galaxyitt.com.ng",
+      "password": "$2a$10$rCk/DUNmxCNfYQXbwRFbxOT/sOBiR.qAXkVzwj1iMsrzW0KQpLdmK",
+      "role": "HR Admin",
+      "initials": "MA",
+      "created_at": "2026-02-23T13:45:07.474Z",
+      "updated_at": "2026-02-23T13:45:07.474Z"
+    }
+  ],
+  "employees": [],
+  "applicants": [],
+  "attendance": [],
+  "leaveRequests": [],
+  "leaveBalances": [],
+  "payrolls": [],
+  "performances": [],
+  "trainings": [],
+  "disciplines": [],
+  "holidays": [],
+  "employeeDocuments": []
+}

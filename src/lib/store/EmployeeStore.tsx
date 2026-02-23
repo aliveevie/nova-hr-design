@@ -1,41 +1,63 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { Employee } from "@/types";
-import { employees as initialEmployees } from "@/lib/mockData";
+import { employeeApi } from "@/lib/api";
 
 interface EmployeeContextType {
   employees: Employee[];
-  addEmployee: (employee: Omit<Employee, "id">) => void;
-  updateEmployee: (id: string, employee: Partial<Employee>) => void;
-  deleteEmployee: (id: string) => void;
+  addEmployee: (employee: Omit<Employee, "id" | "initials">) => Promise<void>;
+  updateEmployee: (id: string, employee: Partial<Employee>) => Promise<void>;
+  deleteEmployee: (id: string) => Promise<void>;
   getEmployee: (id: string) => Employee | undefined;
+  refreshEmployees: () => Promise<void>;
 }
 
 const EmployeeContext = createContext<EmployeeContextType | undefined>(undefined);
 
 export const EmployeeProvider = ({ children }: { children: ReactNode }) => {
-  const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
+  const [employees, setEmployees] = useState<Employee[]>([]);
 
-  const addEmployee = (employee: Omit<Employee, "id">) => {
-    const newEmployee: Employee = {
-      ...employee,
-      id: String(employees.length + 1),
-      initials: employee.name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2),
-    };
-    setEmployees([...employees, newEmployee]);
+  const refreshEmployees = async () => {
+    try {
+      const response = await employeeApi.getAll();
+      setEmployees(response.employees);
+    } catch (error) {
+      console.error("Error fetching employees:", error);
+    }
   };
 
-  const updateEmployee = (id: string, updates: Partial<Employee>) => {
-    setEmployees(employees.map((emp) => (emp.id === id ? { ...emp, ...updates } : emp)));
+  useEffect(() => {
+    refreshEmployees();
+  }, []);
+
+  const addEmployee = async (employee: Omit<Employee, "id" | "initials">) => {
+    try {
+      const response = await employeeApi.create(employee);
+      setEmployees([...employees, response.employee]);
+    } catch (error) {
+      console.error("Error adding employee:", error);
+      throw error;
+    }
   };
 
-  const deleteEmployee = (id: string) => {
-    // Soft delete - mark as inactive
-    setEmployees(employees.map((emp) => (emp.id === id ? { ...emp, status: "Inactive" as const } : emp)));
+  const updateEmployee = async (id: string, updates: Partial<Employee>) => {
+    try {
+      const response = await employeeApi.update(id, updates);
+      setEmployees(employees.map((emp) => (emp.id === id ? response.employee : emp)));
+    } catch (error) {
+      console.error("Error updating employee:", error);
+      throw error;
+    }
+  };
+
+  const deleteEmployee = async (id: string) => {
+    try {
+      await employeeApi.delete(id);
+      // Soft delete - mark as inactive
+      setEmployees(employees.map((emp) => (emp.id === id ? { ...emp, status: "Inactive" as const } : emp)));
+    } catch (error) {
+      console.error("Error deleting employee:", error);
+      throw error;
+    }
   };
 
   const getEmployee = (id: string) => {
@@ -43,7 +65,9 @@ export const EmployeeProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <EmployeeContext.Provider value={{ employees, addEmployee, updateEmployee, deleteEmployee, getEmployee }}>
+    <EmployeeContext.Provider
+      value={{ employees, addEmployee, updateEmployee, deleteEmployee, getEmployee, refreshEmployees }}
+    >
       {children}
     </EmployeeContext.Provider>
   );
@@ -56,4 +80,3 @@ export const useEmployees = () => {
   }
   return context;
 };
-

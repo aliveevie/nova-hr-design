@@ -1,67 +1,66 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { Holiday } from "@/types";
-import { holidaysList as initialHolidays } from "@/lib/mockData";
+import { holidayApi } from "@/lib/api";
 
 interface HolidayContextType {
   holidays: Holiday[];
-  addHoliday: (holiday: Omit<Holiday, "id" | "day">) => void;
-  updateHoliday: (id: string, holiday: Partial<Holiday>) => void;
-  deleteHoliday: (id: string) => void;
-  getHolidayByDate: (date: string) => Holiday | undefined;
+  addHoliday: (holiday: Omit<Holiday, "id">) => Promise<void>;
+  updateHoliday: (id: string, holiday: Partial<Holiday>) => Promise<void>;
+  deleteHoliday: (id: string) => Promise<void>;
+  refreshHolidays: () => Promise<void>;
 }
 
 const HolidayContext = createContext<HolidayContextType | undefined>(undefined);
 
-const getDayName = (dateString: string): string => {
-  const date = new Date(dateString);
-  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  return days[date.getDay()];
-};
-
 export const HolidayProvider = ({ children }: { children: ReactNode }) => {
-  const [holidays, setHolidays] = useState<Holiday[]>(initialHolidays);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
 
-  const addHoliday = (holiday: Omit<Holiday, "id" | "day">) => {
-    const newHoliday: Holiday = {
-      ...holiday,
-      id: String(holidays.length + 1),
-      day: getDayName(holiday.date),
-    };
-    setHolidays([...holidays, newHoliday]);
+  const refreshHolidays = async () => {
+    try {
+      const response = await holidayApi.getAll();
+      setHolidays(response.holidays);
+    } catch (error) {
+      console.error("Error fetching holidays:", error);
+    }
   };
 
-  const updateHoliday = (id: string, updates: Partial<Holiday>) => {
-    setHolidays(
-      holidays.map((h) => {
-        if (h.id === id) {
-          const updated = { ...h, ...updates };
-          if (updates.date) {
-            updated.day = getDayName(updates.date);
-          }
-          return updated;
-        }
-        return h;
-      })
-    );
+  useEffect(() => {
+    refreshHolidays();
+  }, []);
+
+  const addHoliday = async (holiday: Omit<Holiday, "id">) => {
+    try {
+      const response = await holidayApi.create(holiday);
+      setHolidays([...holidays, response.holiday]);
+    } catch (error) {
+      console.error("Error adding holiday:", error);
+      throw error;
+    }
   };
 
-  const deleteHoliday = (id: string) => {
-    setHolidays(holidays.filter((h) => h.id !== id));
+  const updateHoliday = async (id: string, updates: Partial<Holiday>) => {
+    try {
+      const response = await holidayApi.update(id, updates);
+      setHolidays(holidays.map((h) => (h.id === id ? response.holiday : h)));
+    } catch (error) {
+      console.error("Error updating holiday:", error);
+      throw error;
+    }
   };
 
-  const getHolidayByDate = (date: string) => {
-    return holidays.find((h) => h.date === date);
+  const deleteHoliday = async (id: string) => {
+    try {
+      await holidayApi.delete(id);
+      setHolidays(holidays.filter((h) => h.id !== id));
+    } catch (error) {
+      console.error("Error deleting holiday:", error);
+      throw error;
+    }
   };
 
   return (
     <HolidayContext.Provider
-      value={{
-        holidays,
-        addHoliday,
-        updateHoliday,
-        deleteHoliday,
-        getHolidayByDate,
-      }}
+      value={{ holidays, addHoliday, updateHoliday, deleteHoliday, refreshHolidays }}
     >
       {children}
     </HolidayContext.Provider>
@@ -75,4 +74,3 @@ export const useHoliday = () => {
   }
   return context;
 };
-

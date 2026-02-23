@@ -1,47 +1,62 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { Applicant } from "@/types";
-import { applicants as initialApplicants } from "@/lib/mockData";
+import { recruitmentApi } from "@/lib/api";
 
 interface RecruitmentContextType {
   applicants: Applicant[];
-  addApplicant: (applicant: Omit<Applicant, "id" | "initials">) => void;
-  updateApplicant: (id: string, applicant: Partial<Applicant>) => void;
-  deleteApplicant: (id: string) => void;
+  addApplicant: (applicant: Omit<Applicant, "id" | "initials">) => Promise<void>;
+  updateApplicant: (id: string, applicant: Partial<Applicant>) => Promise<void>;
+  deleteApplicant: (id: string) => Promise<void>;
   getApplicant: (id: string) => Applicant | undefined;
+  refreshApplicants: () => Promise<void>;
 }
 
 const RecruitmentContext = createContext<RecruitmentContextType | undefined>(undefined);
 
 export const RecruitmentProvider = ({ children }: { children: ReactNode }) => {
-  const [applicants, setApplicants] = useState<Applicant[]>(initialApplicants);
+  const [applicants, setApplicants] = useState<Applicant[]>([]);
 
-  const addApplicant = (applicant: Omit<Applicant, "id" | "initials">) => {
-    const newApplicant: Applicant = {
-      ...applicant,
-      id: String(applicants.length + 1),
-      initials: applicant.name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2),
-      interviewNotes: applicant.interviewNotes || "",
-      onboardingChecklist: applicant.onboardingChecklist || {
-        documentSubmission: false,
-        accountCreation: false,
-        equipmentAssignment: false,
-        orientationCompletion: false,
-      },
-    };
-    setApplicants([...applicants, newApplicant]);
+  const refreshApplicants = async () => {
+    try {
+      const response = await recruitmentApi.getAll();
+      setApplicants(response.applicants);
+    } catch (error) {
+      console.error("Error fetching applicants:", error);
+    }
   };
 
-  const updateApplicant = (id: string, updates: Partial<Applicant>) => {
-    setApplicants(applicants.map((app) => (app.id === id ? { ...app, ...updates } : app)));
+  useEffect(() => {
+    refreshApplicants();
+  }, []);
+
+  const addApplicant = async (applicant: Omit<Applicant, "id" | "initials">) => {
+    try {
+      const response = await recruitmentApi.create(applicant);
+      setApplicants([...applicants, response.applicant]);
+    } catch (error) {
+      console.error("Error adding applicant:", error);
+      throw error;
+    }
   };
 
-  const deleteApplicant = (id: string) => {
-    setApplicants(applicants.filter((app) => app.id !== id));
+  const updateApplicant = async (id: string, updates: Partial<Applicant>) => {
+    try {
+      const response = await recruitmentApi.update(id, updates);
+      setApplicants(applicants.map((app) => (app.id === id ? response.applicant : app)));
+    } catch (error) {
+      console.error("Error updating applicant:", error);
+      throw error;
+    }
+  };
+
+  const deleteApplicant = async (id: string) => {
+    try {
+      await recruitmentApi.delete(id);
+      setApplicants(applicants.filter((app) => app.id !== id));
+    } catch (error) {
+      console.error("Error deleting applicant:", error);
+      throw error;
+    }
   };
 
   const getApplicant = (id: string) => {
@@ -49,7 +64,9 @@ export const RecruitmentProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <RecruitmentContext.Provider value={{ applicants, addApplicant, updateApplicant, deleteApplicant, getApplicant }}>
+    <RecruitmentContext.Provider
+      value={{ applicants, addApplicant, updateApplicant, deleteApplicant, getApplicant, refreshApplicants }}
+    >
       {children}
     </RecruitmentContext.Provider>
   );
@@ -62,4 +79,3 @@ export const useRecruitment = () => {
   }
   return context;
 };
-

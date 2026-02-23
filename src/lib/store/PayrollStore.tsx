@@ -1,55 +1,60 @@
-import { createContext, useContext, useState, ReactNode } from "react";
-import { Payroll } from "@/types";
-import { payrollData as initialPayroll } from "@/lib/mockData";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { PayrollRecord } from "@/types";
+import { payrollApi } from "@/lib/api";
 
 interface PayrollContextType {
-  payrolls: Payroll[];
-  addPayroll: (payroll: Omit<Payroll, "id">) => void;
-  updatePayroll: (id: string, payroll: Partial<Payroll>) => void;
-  deletePayroll: (id: string) => void;
-  getPayrollByEmployee: (employeeId: string) => Payroll[];
-  getPayrollByPeriod: (month: string, year: string) => Payroll[];
+  payrolls: PayrollRecord[];
+  addPayroll: (payroll: Omit<PayrollRecord, "id" | "employee" | "department" | "netPay" | "status">) => Promise<void>;
+  updatePayroll: (id: string, status: "Paid" | "Pending") => Promise<void>;
+  getPayrollByEmployee: (employeeId: string) => PayrollRecord[];
+  refreshPayrolls: () => Promise<void>;
 }
 
 const PayrollContext = createContext<PayrollContextType | undefined>(undefined);
 
 export const PayrollProvider = ({ children }: { children: ReactNode }) => {
-  const [payrolls, setPayrolls] = useState<Payroll[]>(initialPayroll);
+  const [payrolls, setPayrolls] = useState<PayrollRecord[]>([]);
 
-  const addPayroll = (payroll: Omit<Payroll, "id">) => {
-    const newPayroll: Payroll = {
-      ...payroll,
-      id: String(payrolls.length + 1),
-    };
-    setPayrolls([...payrolls, newPayroll]);
+  const refreshPayrolls = async () => {
+    try {
+      const response = await payrollApi.getAll();
+      setPayrolls(response.payrolls);
+    } catch (error) {
+      console.error("Error fetching payrolls:", error);
+    }
   };
 
-  const updatePayroll = (id: string, updates: Partial<Payroll>) => {
-    setPayrolls(payrolls.map((p) => (p.id === id ? { ...p, ...updates } : p)));
+  useEffect(() => {
+    refreshPayrolls();
+  }, []);
+
+  const addPayroll = async (payroll: Omit<PayrollRecord, "id" | "employee" | "department" | "netPay" | "status">) => {
+    try {
+      const response = await payrollApi.create(payroll);
+      setPayrolls([...payrolls, response.payroll]);
+    } catch (error) {
+      console.error("Error adding payroll:", error);
+      throw error;
+    }
   };
 
-  const deletePayroll = (id: string) => {
-    setPayrolls(payrolls.filter((p) => p.id !== id));
+  const updatePayroll = async (id: string, status: "Paid" | "Pending") => {
+    try {
+      const response = await payrollApi.update(id, status);
+      setPayrolls(payrolls.map((p) => (p.id === id ? response.payroll : p)));
+    } catch (error) {
+      console.error("Error updating payroll:", error);
+      throw error;
+    }
   };
 
   const getPayrollByEmployee = (employeeId: string) => {
     return payrolls.filter((p) => p.employeeId === employeeId);
   };
 
-  const getPayrollByPeriod = (month: string, year: string) => {
-    return payrolls.filter((p) => p.month === month && p.year === year);
-  };
-
   return (
     <PayrollContext.Provider
-      value={{
-        payrolls,
-        addPayroll,
-        updatePayroll,
-        deletePayroll,
-        getPayrollByEmployee,
-        getPayrollByPeriod,
-      }}
+      value={{ payrolls, addPayroll, updatePayroll, getPayrollByEmployee, refreshPayrolls }}
     >
       {children}
     </PayrollContext.Provider>
@@ -63,4 +68,3 @@ export const usePayroll = () => {
   }
   return context;
 };
-

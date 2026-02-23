@@ -1,34 +1,62 @@
-import { createContext, useContext, useState, ReactNode } from "react";
-import { Discipline } from "@/types";
-import { disciplineRecords as initialDiscipline } from "@/lib/mockData";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { DisciplineRecord } from "@/types";
+import { disciplineApi } from "@/lib/api";
 
 interface DisciplineContextType {
-  disciplines: Discipline[];
-  addDiscipline: (discipline: Omit<Discipline, "id">) => void;
-  updateDiscipline: (id: string, discipline: Partial<Discipline>) => void;
-  deleteDiscipline: (id: string) => void;
-  getDisciplineByEmployee: (employeeId: string) => Discipline[];
+  disciplines: DisciplineRecord[];
+  addDiscipline: (discipline: Omit<DisciplineRecord, "id" | "employee">) => Promise<void>;
+  updateDiscipline: (id: string, discipline: Partial<DisciplineRecord>) => Promise<void>;
+  deleteDiscipline: (id: string) => Promise<void>;
+  getDisciplineByEmployee: (employeeId: string) => DisciplineRecord[];
+  refreshDisciplines: () => Promise<void>;
 }
 
 const DisciplineContext = createContext<DisciplineContextType | undefined>(undefined);
 
 export const DisciplineProvider = ({ children }: { children: ReactNode }) => {
-  const [disciplines, setDisciplines] = useState<Discipline[]>(initialDiscipline);
+  const [disciplines, setDisciplines] = useState<DisciplineRecord[]>([]);
 
-  const addDiscipline = (discipline: Omit<Discipline, "id">) => {
-    const newDiscipline: Discipline = {
-      ...discipline,
-      id: String(disciplines.length + 1),
-    };
-    setDisciplines([...disciplines, newDiscipline]);
+  const refreshDisciplines = async () => {
+    try {
+      const response = await disciplineApi.getAll();
+      setDisciplines(response.disciplines);
+    } catch (error) {
+      console.error("Error fetching disciplines:", error);
+    }
   };
 
-  const updateDiscipline = (id: string, updates: Partial<Discipline>) => {
-    setDisciplines(disciplines.map((d) => (d.id === id ? { ...d, ...updates } : d)));
+  useEffect(() => {
+    refreshDisciplines();
+  }, []);
+
+  const addDiscipline = async (discipline: Omit<DisciplineRecord, "id" | "employee">) => {
+    try {
+      const response = await disciplineApi.create(discipline);
+      setDisciplines([...disciplines, response.discipline]);
+    } catch (error) {
+      console.error("Error adding discipline:", error);
+      throw error;
+    }
   };
 
-  const deleteDiscipline = (id: string) => {
-    setDisciplines(disciplines.filter((d) => d.id !== id));
+  const updateDiscipline = async (id: string, updates: Partial<DisciplineRecord>) => {
+    try {
+      const response = await disciplineApi.update(id, updates);
+      setDisciplines(disciplines.map((d) => (d.id === id ? response.discipline : d)));
+    } catch (error) {
+      console.error("Error updating discipline:", error);
+      throw error;
+    }
+  };
+
+  const deleteDiscipline = async (id: string) => {
+    try {
+      await disciplineApi.delete(id);
+      setDisciplines(disciplines.filter((d) => d.id !== id));
+    } catch (error) {
+      console.error("Error deleting discipline:", error);
+      throw error;
+    }
   };
 
   const getDisciplineByEmployee = (employeeId: string) => {
@@ -37,13 +65,7 @@ export const DisciplineProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <DisciplineContext.Provider
-      value={{
-        disciplines,
-        addDiscipline,
-        updateDiscipline,
-        deleteDiscipline,
-        getDisciplineByEmployee,
-      }}
+      value={{ disciplines, addDiscipline, updateDiscipline, deleteDiscipline, getDisciplineByEmployee, refreshDisciplines }}
     >
       {children}
     </DisciplineContext.Provider>
@@ -57,4 +79,3 @@ export const useDiscipline = () => {
   }
   return context;
 };
-
