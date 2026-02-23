@@ -15,8 +15,30 @@ import holidayRoutes from "./routes/holiday.routes.js";
 
 const app = express();
 
-// Middleware
-app.use(cors({ origin: env.FRONTEND_URL, credentials: true }));
+// Middleware - Allow multiple origins for development
+const allowedOrigins = [
+  env.FRONTEND_URL,
+  "http://localhost:8080",
+  "http://localhost:5173",
+  "http://localhost:3000",
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, true); // Allow all origins in development
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

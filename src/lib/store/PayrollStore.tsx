@@ -7,6 +7,7 @@ interface PayrollContextType {
   addPayroll: (payroll: Omit<PayrollRecord, "id" | "employee" | "department" | "netPay" | "status">) => Promise<void>;
   updatePayroll: (id: string, status: "Paid" | "Pending") => Promise<void>;
   getPayrollByEmployee: (employeeId: string) => PayrollRecord[];
+  getPayrollByPeriod: (month: string, year: string) => PayrollRecord[];
   refreshPayrolls: () => Promise<void>;
 }
 
@@ -52,9 +53,13 @@ export const PayrollProvider = ({ children }: { children: ReactNode }) => {
     return payrolls.filter((p) => p.employeeId === employeeId);
   };
 
+  const getPayrollByPeriod = (month: string, year: string) => {
+    return payrolls.filter((p) => p.month === month && p.year === year);
+  };
+
   return (
     <PayrollContext.Provider
-      value={{ payrolls, addPayroll, updatePayroll, getPayrollByEmployee, refreshPayrolls }}
+      value={{ payrolls, addPayroll, updatePayroll, getPayrollByEmployee, getPayrollByPeriod, refreshPayrolls }}
     >
       {children}
     </PayrollContext.Provider>
