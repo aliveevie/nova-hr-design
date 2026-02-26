@@ -6,3 +6,4 @@ database/*.db-journal
 *.log
 .DS_Store
 
+.vercel

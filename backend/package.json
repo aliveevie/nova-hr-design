@@ -8,7 +8,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "migrate": "tsx src/config/database.ts"
+    "migrate": "tsx src/config/database.ts",
+    "vercel-build": "npm run build"
   },
   "keywords": [],
   "author": "",
