@@ -1,4 +1,6 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+// Use .env.local for localhost, otherwise use production API URL
+// To use localhost, set VITE_API_URL=http://localhost:3001/api in .env.local
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://server-hr-nova.vercel.app/api";
 
 class ApiClient {
   private baseURL: string;
