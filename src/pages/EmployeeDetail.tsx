@@ -79,10 +79,22 @@ const EmployeeDetail = () => {
                   <Badge variant="secondary" className={`mt-2 ${statusClass[employee.status]}`}>{employee.status}</Badge>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                  <span className="flex items-center gap-2 text-muted-foreground"><Mail className="h-4 w-4 shrink-0" />{employee.email}</span>
-                  <span className="flex items-center gap-2 text-muted-foreground"><Phone className="h-4 w-4 shrink-0" />{employee.phone}</span>
-                  <span className="flex items-center gap-2 text-muted-foreground"><Building className="h-4 w-4 shrink-0" />{employee.department}</span>
-                  <span className="flex items-center gap-2 text-muted-foreground"><Calendar className="h-4 w-4 shrink-0" />Joined {employee.joinDate}</span>
+                  <span className="flex items-center gap-2 text-muted-foreground min-w-0">
+                    <Mail className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{employee.email}</span>
+                  </span>
+                  <span className="flex items-center gap-2 text-muted-foreground min-w-0">
+                    <Phone className="h-4 w-4 shrink-0" />
+                    <span className="truncate whitespace-nowrap">{employee.phone || "N/A"}</span>
+                  </span>
+                  <span className="flex items-center gap-2 text-muted-foreground min-w-0">
+                    <Building className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{employee.department}</span>
+                  </span>
+                  <span className="flex items-center gap-2 text-muted-foreground min-w-0">
+                    <Calendar className="h-4 w-4 shrink-0" />
+                    <span className="truncate">Joined {employee.joinDate}</span>
+                  </span>
                 </div>
               </div>
             </div>

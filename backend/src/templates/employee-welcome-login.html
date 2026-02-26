@@ -31,10 +31,58 @@
       
       <div class="credentials-box">
         <h3 style="margin-top: 0;">Your Login Credentials:</h3>
-        <p><strong>Email:</strong> {{email}}</p>
-        <p><strong>Password:</strong> {{password}}</p>
+        
+        <div style="margin: 10px 0;">
+          <label style="display: block; font-weight: bold; margin-bottom: 5px;">Email:</label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="text" id="email-cred" value="{{email}}" readonly style="flex: 1; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-family: monospace; background-color: white; cursor: text;" onclick="this.select(); document.execCommand('copy'); showCopyMessage('Email copied!');" />
+            <button onclick="copyToClipboard('{{email}}', 'email-cred'); return false;" style="padding: 8px 12px; background-color: #4F46E5; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Copy</button>
+          </div>
+        </div>
+        
+        <div style="margin: 10px 0;">
+          <label style="display: block; font-weight: bold; margin-bottom: 5px;">Password:</label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="text" id="password-cred" value="{{password}}" readonly style="flex: 1; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-family: monospace; background-color: white; cursor: text;" onclick="this.select(); document.execCommand('copy'); showCopyMessage('Password copied!');" />
+            <button onclick="copyToClipboard('{{password}}', 'password-cred'); return false;" style="padding: 8px 12px; background-color: #4F46E5; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Copy</button>
+          </div>
+        </div>
+        
         <p style="font-size: 12px; color: #dc2626; margin-top: 10px;"><strong>Important:</strong> Please change your password after your first login for security purposes.</p>
+        <p id="copy-message" style="font-size: 12px; color: #10b981; margin-top: 5px; display: none; font-weight: bold;">✓ Copied!</p>
       </div>
+      
+      <script>
+        function copyToClipboard(text, inputId) {
+          const input = document.getElementById(inputId);
+          if (input) {
+            input.select();
+            input.setSelectionRange(0, 99999); // For mobile devices
+            try {
+              document.execCommand('copy');
+              showCopyMessage('Copied to clipboard!');
+            } catch (err) {
+              // Fallback for modern browsers
+              navigator.clipboard.writeText(text).then(function() {
+                showCopyMessage('Copied to clipboard!');
+              }).catch(function(err) {
+                showCopyMessage('Failed to copy. Please select and copy manually.');
+              });
+            }
+          }
+        }
+        
+        function showCopyMessage(message) {
+          const msgEl = document.getElementById('copy-message');
+          if (msgEl) {
+            msgEl.textContent = '✓ ' + message;
+            msgEl.style.display = 'block';
+            setTimeout(function() {
+              msgEl.style.display = 'none';
+            }, 2000);
+          }
+        }
+      </script>
       
       <div style="text-align: center;">
         <a href="{{loginUrl}}" class="login-button">Login to Employee Portal</a>
