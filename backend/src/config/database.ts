@@ -93,6 +93,7 @@ const seedInitialData = async () => {
       password: hashedPassword,
       role: "HR Admin",
       initials: "MA",
+      employeeId: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });

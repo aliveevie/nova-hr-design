@@ -5,7 +5,7 @@ import { authApi } from "@/lib/api";
 interface AuthContextType {
   user: AuthenticatedUser | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<AuthenticatedUser | null>;
   logout: () => void;
 }
 
@@ -42,7 +42,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<AuthenticatedUser | null> => {
     try {
       const response = await authApi.login({ email, password });
       const userToStore: AuthenticatedUser = response.user;
@@ -50,10 +50,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(userToStore);
       setIsAuthenticated(true);
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userToStore));
-      return true;
+      return userToStore;
     } catch (error) {
       console.error("Login error:", error);
-      return false;
+      return null;
     }
   };
 

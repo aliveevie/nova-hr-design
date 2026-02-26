@@ -9,7 +9,8 @@ import {
   getEmployeeDocuments,
 } from "../services/employee.service.js";
 import { employeeSchema } from "../utils/validators.js";
-import { sendWelcomeEmail } from "../services/email.service.js";
+import { sendEmployeeWelcomeWithLogin } from "../services/email.service.js";
+import { env } from "../config/env.js";
 
 export const getEmployeesController = async (req: AuthRequest, res: Response) => {
   try {
@@ -29,6 +30,12 @@ export const getEmployeesController = async (req: AuthRequest, res: Response) =>
 export const getEmployeeController = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    
+    // If user is an Employee, they can only access their own record
+    if (req.user?.role === "Employee" && req.user.employeeId !== id) {
+      return res.status(403).json({ error: "Forbidden: You can only access your own data" });
+    }
+    
     const employee = await getEmployeeById(id);
 
     if (!employee) {
@@ -92,13 +99,19 @@ export const createEmployeeController = async (req: AuthRequest, res: Response) 
 
     const employee = await createEmployee(validation.data);
 
-    // Send welcome email
-    sendWelcomeEmail(
+    // Send welcome email with login credentials
+    const loginUrl = `${env.FRONTEND_URL}/login`;
+    sendEmployeeWelcomeWithLogin(
       employee.email,
       employee.name,
       employee.job_title,
-      employee.department
+      employee.department,
+      employee.tempPassword,
+      loginUrl
     ).catch((err) => console.error("Failed to send welcome email:", err));
+    
+    // Keep tempPassword in response for display to admin (will be shown once, then removed)
+    const tempPassword = employee.tempPassword;
 
     // Transform to frontend format
     const transformed = {
@@ -125,6 +138,8 @@ export const createEmployeeController = async (req: AuthRequest, res: Response) 
             address: employee.next_of_kin_address,
           }
         : undefined,
+      // Include tempPassword only for new employee creation
+      tempPassword: tempPassword,
     };
 
     res.status(201).json({ employee: transformed });
@@ -137,6 +152,12 @@ export const createEmployeeController = async (req: AuthRequest, res: Response) 
 export const updateEmployeeController = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    
+    // If user is an Employee, they can only update their own record
+    if (req.user?.role === "Employee" && req.user.employeeId !== id) {
+      return res.status(403).json({ error: "Forbidden: You can only modify your own data" });
+    }
+    
     const validation = employeeSchema.partial().safeParse(req.body);
     if (!validation.success) {
       return res.status(400).json({ error: "Invalid data", details: validation.error.errors });
@@ -147,7 +168,24 @@ export const updateEmployeeController = async (req: AuthRequest, res: Response) 
       return res.status(404).json({ error: "Employee not found" });
     }
 
-    const updatedData = { ...existing, ...validation.data };
+    // Employees can only update next of kin, not other fields
+    let updatedData;
+    if (req.user?.role === "Employee") {
+      // Only allow next of kin updates for employees
+      updatedData = {
+        ...existing,
+        nextOfKin: validation.data.nextOfKin || (existing.next_of_kin_name ? {
+          name: existing.next_of_kin_name,
+          relationship: existing.next_of_kin_relationship,
+          phone: existing.next_of_kin_phone,
+          address: existing.next_of_kin_address,
+        } : undefined)
+      };
+    } else {
+      // HR/Admin can update all fields
+      updatedData = { ...existing, ...validation.data };
+    }
+    
     const employee = await updateEmployee(id, updatedData);
 
     // Transform to frontend format

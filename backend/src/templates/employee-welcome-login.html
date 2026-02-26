@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #4F46E5; color: white; padding: 20px; text-align: center; }
+    .content { background-color: #f9fafb; padding: 20px; }
+    .info-box { background-color: white; padding: 15px; margin: 10px 0; border-left: 4px solid #4F46E5; }
+    .credentials-box { background-color: #fef3c7; padding: 15px; margin: 10px 0; border: 2px solid #f59e0b; border-radius: 5px; }
+    .login-button { display: inline-block; background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 15px 0; }
+    .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Welcome to GalaxyITT HR System - NovaHR!</h1>
+    </div>
+    <div class="content">
+      <p>Dear {{employeeName}},</p>
+      <p>Welcome to our team! We're excited to have you on board.</p>
+      
+      <div class="info-box">
+        <strong>Position:</strong> {{jobTitle}}<br>
+        <strong>Department:</strong> {{department}}
+      </div>
+      
+      <p>Your employee account has been created in the HR system. You can now access your profile, view payslips, apply for leave, and more.</p>
+      
+      <div class="credentials-box">
+        <h3 style="margin-top: 0;">Your Login Credentials:</h3>
+        <p><strong>Email:</strong> {{email}}</p>
+        <p><strong>Password:</strong> {{password}}</p>
+        <p style="font-size: 12px; color: #dc2626; margin-top: 10px;"><strong>Important:</strong> Please change your password after your first login for security purposes.</p>
+      </div>
+      
+      <div style="text-align: center;">
+        <a href="{{loginUrl}}" class="login-button">Login to Employee Portal</a>
+      </div>
+      
+      <p>If you have any questions, please don't hesitate to contact HR.</p>
+    </div>
+    <div class="footer">
+      <p>This is an automated email from GalaxyITT HR System - NovaHR</p>
+    </div>
+  </div>
+</body>
+</html>
+

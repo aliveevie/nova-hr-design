@@ -2,11 +2,19 @@ import { createEmailTransporter, emailConfig } from "../config/email.js";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import nodemailer from "nodemailer";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const transporter = createEmailTransporter();
+let transporter: any = null;
+
+const getTransporter = async () => {
+  if (!transporter) {
+    transporter = await createEmailTransporter();
+  }
+  return transporter;
+};
 
 interface EmailOptions {
   to: string | string[];
@@ -15,19 +23,28 @@ interface EmailOptions {
   text?: string;
 }
 
-export const sendEmail = async (options: EmailOptions): Promise<boolean> => {
+export const sendEmail = async (options: EmailOptions): Promise<{ success: boolean; previewUrl?: string }> => {
   try {
-    await transporter.sendMail({
+    const transport = await getTransporter();
+    const info = await transport.sendMail({
       from: emailConfig.from,
       to: Array.isArray(options.to) ? options.to.join(", ") : options.to,
       subject: options.subject,
       html: options.html,
       text: options.text || options.html.replace(/<[^>]*>/g, ""),
     });
-    return true;
+
+    // If using Ethereal, get preview URL
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log("Preview URL:", previewUrl);
+      return { success: true, previewUrl };
+    }
+
+    return { success: true };
   } catch (error) {
     console.error("Error sending email:", error);
-    return false;
+    return { success: false };
   }
 };
 
@@ -211,6 +228,30 @@ export const sendTrainingReminderEmail = async (
   return sendEmail({
     to: employeeEmail,
     subject: `Training Reminder - ${trainingTitle}`,
+    html,
+  });
+};
+
+export const sendEmployeeWelcomeWithLogin = async (
+  employeeEmail: string,
+  employeeName: string,
+  jobTitle: string,
+  department: string,
+  password: string,
+  loginUrl: string
+) => {
+  const template = loadTemplate("employee-welcome-login");
+  const html = replaceTemplateVariables(template, {
+    employeeName,
+    jobTitle,
+    department,
+    email: employeeEmail,
+    password,
+    loginUrl,
+  });
+  return sendEmail({
+    to: employeeEmail,
+    subject: `Welcome to GalaxyITT HR System - Your Login Credentials`,
     html,
   });
 };

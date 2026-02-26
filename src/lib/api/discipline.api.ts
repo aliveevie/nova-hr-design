@@ -13,6 +13,10 @@ export const disciplineApi = {
     return apiClient.get<{ discipline: DisciplineRecord }>(`/discipline/detail/${id}`);
   },
 
+  getByEmployee: async (employeeId: string): Promise<{ disciplines: DisciplineRecord[] }> => {
+    return apiClient.get<{ disciplines: DisciplineRecord[] }>(`/discipline?employeeId=${employeeId}`);
+  },
+
   create: async (discipline: Omit<DisciplineRecord, "id" | "employee">): Promise<{ discipline: DisciplineRecord }> => {
     return apiClient.post<{ discipline: DisciplineRecord }>("/discipline", discipline);
   },

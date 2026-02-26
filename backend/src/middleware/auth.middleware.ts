@@ -6,6 +6,7 @@ export interface AuthRequest extends Request {
     userId: string;
     email: string;
     role: string;
+    employeeId?: string;
   };
 }
 
@@ -46,5 +47,42 @@ export const requireRole = (...roles: string[]) => {
 
     next();
   };
+};
+
+/**
+ * Middleware to ensure employees can only access their own data
+ * If user is an Employee, automatically filter by their employeeId
+ */
+export const enforceEmployeeAccess = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  // If user is an Employee, they can only access their own data
+  if (req.user.role === "Employee" && req.user.employeeId) {
+    // Override any employeeId in query params or body with the logged-in employee's ID
+    if (req.query.employeeId && req.query.employeeId !== req.user.employeeId) {
+      return res.status(403).json({ error: "Forbidden: You can only access your own data" });
+    }
+    
+    // Set employeeId to the logged-in employee's ID
+    req.query.employeeId = req.user.employeeId;
+    
+    // For POST/PUT requests, ensure employeeId in body matches
+    if (req.body && req.body.employeeId && req.body.employeeId !== req.user.employeeId) {
+      return res.status(403).json({ error: "Forbidden: You can only modify your own data" });
+    }
+    
+    // For route params like /balance/:employeeId
+    if (req.params.employeeId && req.params.employeeId !== req.user.employeeId) {
+      return res.status(403).json({ error: "Forbidden: You can only access your own data" });
+    }
+  }
+
+  next();
 };
 

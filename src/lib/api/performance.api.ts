@@ -9,8 +9,8 @@ export const performanceApi = {
     return apiClient.get<{ performances: PerformanceRecord[] }>(`/performance${query}`);
   },
 
-  getByEmployee: async (employeeId: string): Promise<{ performance: PerformanceRecord }> => {
-    return apiClient.get<{ performance: PerformanceRecord }>(`/performance/${employeeId}`);
+  getByEmployee: async (employeeId: string): Promise<{ performances: PerformanceRecord[] }> => {
+    return apiClient.get<{ performances: PerformanceRecord[] }>(`/performance?employeeId=${employeeId}`);
   },
 
   create: async (performance: Omit<PerformanceRecord, "id" | "employee" | "department">): Promise<{ performance: PerformanceRecord }> => {

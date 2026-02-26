@@ -35,15 +35,27 @@ const AppHeader = ({ onMenuClick }: AppHeaderProps) => {
   return (
     <header className="h-16 border-b bg-card flex items-center justify-between px-4 md:px-6 shrink-0">
       <div className="flex items-center gap-4 flex-1">
-        <button onClick={onMenuClick} className="md:hidden p-2 hover:bg-muted rounded-lg transition-colors">
-          <Menu className="h-5 w-5" />
-        </button>
-        <div className="hidden md:block flex-1 max-w-md">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
-            <Input placeholder="Search employees, documents..." className="pl-10 bg-muted/50 border-0 focus-visible:ring-1" />
+        {user.role !== "Employee" && (
+          <>
+            <button onClick={onMenuClick} className="md:hidden p-2 hover:bg-muted rounded-lg transition-colors">
+              <Menu className="h-5 w-5" />
+            </button>
+            <div className="hidden md:block flex-1 max-w-md">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                <Input placeholder="Search employees, documents..." className="pl-10 bg-muted/50 border-0 focus-visible:ring-1" />
+              </div>
+            </div>
+          </>
+        )}
+        {user.role === "Employee" && (
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
+              <span className="text-primary-foreground font-bold text-sm">N</span>
+            </div>
+            <span className="text-lg font-bold tracking-tight">Employee Portal</span>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2">

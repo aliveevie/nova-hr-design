@@ -1,5 +1,6 @@
 import { getDatabase, dbHelpers } from "../config/database.js";
 import { randomUUID } from "crypto";
+import { hashPassword } from "../utils/password.util.js";
 
 export const getAllEmployees = async (filters?: {
   department?: string;
@@ -77,8 +78,35 @@ export const createEmployee = async (employeeData: any) => {
     updated_at: new Date().toISOString(),
   });
 
+  // Generate temporary password for employee login
+  const tempPassword = Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12).toUpperCase() + "!@#";
+  const hashedPassword = await hashPassword(tempPassword);
+  
+  // Create user account for employee
+  const userId = randomUUID();
+  const userInitials = employeeData.name
+    .split(" ")
+    .map((n: string) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+  
+  db.data.users.push({
+    id: userId,
+    name: employeeData.name,
+    email: employeeData.email,
+    password: hashedPassword,
+    role: "Employee",
+    employeeId: id,
+    initials: userInitials,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
   await dbHelpers.write();
-  return newEmployee;
+  
+  // Return employee with temporary password for email
+  return { ...newEmployee, tempPassword };
 };
 
 export const updateEmployee = async (id: string, employeeData: any) => {

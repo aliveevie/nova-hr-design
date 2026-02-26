@@ -8,7 +8,9 @@ export const env = {
   JWT_SECRET: process.env.JWT_SECRET || "secret-key",
   DATABASE_PATH: process.env.DATABASE_PATH || "./database/hr.db",
   FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:5173",
-  SMTP_HOST: process.env.SMTP_HOST || "smtp.gmail.com",
+  // SMTP settings are fully controlled by your .env – no provider is hardcoded.
+  // Configure these for *your* mail server (e.g. company SMTP, SendGrid, etc.).
+  SMTP_HOST: process.env.SMTP_HOST || "",
   SMTP_PORT: parseInt(process.env.SMTP_PORT || "587", 10),
   SMTP_SECURE: process.env.SMTP_SECURE === "true",
   SMTP_USER: process.env.SMTP_USER || "",

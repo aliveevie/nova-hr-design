@@ -33,6 +33,8 @@ export const EmployeeProvider = ({ children }: { children: ReactNode }) => {
     try {
       const response = await employeeApi.create(employee);
       setEmployees([...employees, response.employee]);
+      // Return response with tempPassword if available
+      return response.employee;
     } catch (error) {
       console.error("Error adding employee:", error);
       throw error;

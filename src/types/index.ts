@@ -6,6 +6,7 @@ export interface User {
   password: string;
   role: "HR Admin" | "Manager" | "Employee";
   initials: string;
+  employeeId?: string;
 }
 
 export type AuthenticatedUser = Omit<User, "password">;
@@ -32,6 +33,7 @@ export interface Employee {
   joinDate: string;
   salary: number;
   initials: string;
+  tempPassword?: string; // Only present when creating a new employee
   nextOfKin?: {
     name: string;
     relationship: string;

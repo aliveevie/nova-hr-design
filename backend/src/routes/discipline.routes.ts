@@ -6,17 +6,17 @@ import {
   updateDisciplineController,
   deleteDisciplineController,
 } from "../controllers/discipline.controller.js";
-import { authenticate } from "../middleware/auth.middleware.js";
+import { authenticate, enforceEmployeeAccess, requireRole } from "../middleware/auth.middleware.js";
 
 const router = Router();
 
 router.use(authenticate);
+router.use(enforceEmployeeAccess); // Enforce employee access restrictions
 router.get("/", getDisciplinesController);
-router.get("/:employeeId", getDisciplinesController);
 router.get("/detail/:id", getDisciplineController);
-router.post("/", createDisciplineController);
-router.put("/:id", updateDisciplineController);
-router.delete("/:id", deleteDisciplineController);
+router.post("/", requireRole("HR Admin", "Manager"), createDisciplineController);
+router.put("/:id", requireRole("HR Admin", "Manager"), updateDisciplineController);
+router.delete("/:id", requireRole("HR Admin", "Manager"), deleteDisciplineController);
 
 export default router;
 

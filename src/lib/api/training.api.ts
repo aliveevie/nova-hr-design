@@ -13,6 +13,10 @@ export const trainingApi = {
     return apiClient.get<{ training: TrainingRecord }>(`/training/detail/${id}`);
   },
 
+  getByEmployee: async (employeeId: string): Promise<{ trainings: TrainingRecord[] }> => {
+    return apiClient.get<{ trainings: TrainingRecord[] }>(`/training?employeeId=${employeeId}`);
+  },
+
   create: async (training: Omit<TrainingRecord, "id" | "employee">): Promise<{ training: TrainingRecord }> => {
     return apiClient.post<{ training: TrainingRecord }>("/training", training);
   },

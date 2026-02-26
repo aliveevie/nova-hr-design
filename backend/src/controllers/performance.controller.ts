@@ -53,13 +53,13 @@ export const getPerformancesController = async (req: AuthRequest, res: Response)
 
 export const getPerformanceController = async (req: AuthRequest, res: Response) => {
   try {
-    const { employeeId } = req.params;
-    const performances = await getPerformances({ employeeId });
-    if (performances.length === 0) {
+    const { id } = req.params;
+    const performance = await getPerformanceById(id);
+    if (!performance) {
       return res.status(404).json({ error: "Performance not found" });
     }
 
-    const latest = performances[0];
+    const latest = performance;
     const transformed = {
       id: latest.id,
       employeeId: latest.employee_id,

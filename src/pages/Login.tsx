@@ -21,13 +21,17 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const success = await login(email, password);
-      if (success) {
+      const loggedInUser = await login(email, password);
+      if (loggedInUser) {
         toast({
           title: "Login successful",
           description: "Welcome back!",
         });
-        navigate("/");
+        if (loggedInUser.role === "Employee") {
+          navigate("/employee-portal");
+        } else {
+          navigate("/");
+        }
       } else {
         toast({
           title: "Login failed",

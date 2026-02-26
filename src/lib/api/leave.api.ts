@@ -14,6 +14,10 @@ export const leaveApi = {
     return apiClient.get<{ balance: LeaveBalance }>(`/leave/balance/${employeeId}`);
   },
 
+  getRequestsForEmployee: async (employeeId: string): Promise<{ leaveRequests: LeaveRequest[] }> => {
+    return apiClient.get<{ leaveRequests: LeaveRequest[] }>(`/leave/requests?employeeId=${employeeId}`);
+  },
+
   createRequest: async (request: Omit<LeaveRequest, "id" | "employee" | "days" | "status">): Promise<{ leaveRequest: LeaveRequest }> => {
     return apiClient.post<{ leaveRequest: LeaveRequest }>("/leave/requests", request);
   },
