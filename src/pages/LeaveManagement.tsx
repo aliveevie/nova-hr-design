@@ -1,19 +1,11 @@
-import { Plus, CheckCircle2, XCircle } from "lucide-react";
-import { useState } from "react";
+import { CheckCircle2, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
-import { useLeave, useHoliday, useEmployees, useAuth } from "@/lib/store";
+import { useLeave, useEmployees, useAuth } from "@/lib/store";
 import { LeaveRequest } from "@/types";
 import { useToast } from "@/hooks/use-toast";
-import { calculateLeaveDays, getLeaveBalanceForType } from "@/lib/utils/leaveUtils";
 
 const statusClass: Record<string, string> = {
   Approved: "bg-success/10 text-success border-0",
@@ -22,114 +14,59 @@ const statusClass: Record<string, string> = {
 };
 
 const LeaveManagement = () => {
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [leaveType, setLeaveType] = useState<LeaveRequest["type"]>("Annual Leave");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [reason, setReason] = useState("");
-  
   const { user } = useAuth();
-  const { leaveRequests, leaveBalances, addLeaveRequest, updateLeaveRequest, getLeaveBalance, updateLeaveBalance } = useLeave();
-  const { holidays } = useHoliday();
+  const { leaveRequests, leaveBalances, updateLeaveRequest, refreshLeaveRequests } = useLeave();
   const { employees } = useEmployees();
   const { toast } = useToast();
 
-  const currentEmployee = employees.find(e => e.email === user?.email);
-  const employeeBalance = currentEmployee ? getLeaveBalance(currentEmployee.id) : undefined;
-
-  const handleSubmitLeave = () => {
-    if (!currentEmployee) {
+  const handleApprove = async (id: string, employeeId: string, leaveType: LeaveRequest["type"], days: number) => {
+    try {
+      await updateLeaveRequest(id, "Approved");
+      
+      // Refresh leave requests to get updated data
+      await refreshLeaveRequests();
+      
+      toast({
+        title: "Leave approved",
+        description: "Leave request has been approved",
+      });
+    } catch (error) {
+      console.error("Error approving leave:", error);
       toast({
         title: "Error",
-        description: "Employee not found",
+        description: "Failed to approve leave request",
         variant: "destructive",
       });
-      return;
     }
+  };
 
-    if (!fromDate || !toDate) {
+  const handleReject = async (id: string) => {
+    try {
+      await updateLeaveRequest(id, "Rejected");
+      
+      // Refresh leave requests
+      await refreshLeaveRequests();
+      
+      toast({
+        title: "Leave rejected",
+        description: "Leave request has been rejected",
+      });
+    } catch (error) {
+      console.error("Error rejecting leave:", error);
       toast({
         title: "Error",
-        description: "Please select dates",
+        description: "Failed to reject leave request",
         variant: "destructive",
       });
-      return;
     }
-
-    const days = calculateLeaveDays(fromDate, toDate, holidays);
-    const balance = getLeaveBalanceForType(employeeBalance, leaveType);
-
-    if (days > balance) {
-      toast({
-        title: "Insufficient balance",
-        description: `You only have ${balance} days remaining for ${leaveType}`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    addLeaveRequest({
-      employeeId: currentEmployee.id,
-      employee: currentEmployee.name,
-      type: leaveType,
-      from: fromDate,
-      to: toDate,
-      days,
-      status: "Pending",
-      reason,
-    });
-
-    setIsDialogOpen(false);
-    setFromDate("");
-    setToDate("");
-    setReason("");
-    
-    toast({
-      title: "Leave request submitted",
-      description: "Your leave request has been submitted for approval",
-    });
   };
 
-  const handleApprove = (id: string, employeeId: string, leaveType: LeaveRequest["type"], days: number) => {
-    updateLeaveRequest(id, { status: "Approved" });
-    const balance = getLeaveBalance(employeeId);
-    if (balance) {
-      const updated = { ...balance };
-      switch (leaveType) {
-        case "Annual Leave":
-          updated.annualLeave = Math.max(0, updated.annualLeave - days);
-          break;
-        case "Sick Leave":
-          updated.sickLeave = Math.max(0, updated.sickLeave - days);
-          break;
-        case "Maternity Leave":
-          updated.maternityLeave = Math.max(0, updated.maternityLeave - days);
-          break;
-        case "Casual Leave":
-          updated.casualLeave = Math.max(0, updated.casualLeave - days);
-          break;
-      }
-      updateLeaveBalance(employeeId, updated);
-    }
-    toast({
-      title: "Leave approved",
-      description: "Leave request has been approved",
-    });
-  };
-
-  const handleReject = (id: string) => {
-    updateLeaveRequest(id, { status: "Rejected" });
-    toast({
-      title: "Leave rejected",
-      description: "Leave request has been rejected",
-    });
-  };
-
+  // Leave type cards - showing standard allocations
   const leaveTypes = [
-    { type: "Annual Leave" as const, total: 20, balance: employeeBalance?.annualLeave || 0 },
-    { type: "Sick Leave" as const, total: 10, balance: employeeBalance?.sickLeave || 0 },
-    { type: "Maternity Leave" as const, total: 90, balance: employeeBalance?.maternityLeave || 0 },
-    { type: "Casual Leave" as const, total: 5, balance: employeeBalance?.casualLeave || 0 },
+    { type: "Annual Leave" as const, total: 20, balance: 0 },
+    { type: "Sick Leave" as const, total: 10, balance: 0 },
+    { type: "Maternity Leave" as const, total: 90, balance: 0 },
+    { type: "Casual Leave" as const, total: 5, balance: 0 },
   ];
 
   return (
@@ -139,52 +76,6 @@ const LeaveManagement = () => {
           <h1 className="text-2xl font-bold tracking-tight">Leave Management</h1>
           <p className="text-muted-foreground">Manage leave requests and balances</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="h-4 w-4 mr-2" />Apply Leave</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Leave Application</DialogTitle></DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label>Leave Type</Label>
-                <Select value={leaveType} onValueChange={(v) => setLeaveType(v as LeaveRequest["type"])}>
-                  <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Annual Leave">Annual Leave</SelectItem>
-                    <SelectItem value="Sick Leave">Sick Leave</SelectItem>
-                    <SelectItem value="Maternity Leave">Maternity Leave</SelectItem>
-                    <SelectItem value="Casual Leave">Casual Leave</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>From</Label>
-                  <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>To</Label>
-                  <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-                </div>
-              </div>
-              {fromDate && toDate && (
-                <div className="text-sm text-muted-foreground">
-                  Working days: {calculateLeaveDays(fromDate, toDate, holidays)} days
-                </div>
-              )}
-              <div className="space-y-2">
-                <Label>Reason</Label>
-                <Textarea
-                  placeholder="Reason for leave..."
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                />
-              </div>
-              <Button onClick={handleSubmitLeave} className="w-full">Submit Request</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

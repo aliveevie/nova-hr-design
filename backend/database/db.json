@@ -83,7 +83,21 @@
   ],
   "applicants": [],
   "attendance": [],
-  "leaveRequests": [],
+  "leaveRequests": [
+    {
+      "id": "e09e7000-8a7b-4ac2-b434-65d430c80618",
+      "employee_id": "7b5a4b37-b56b-4fd3-8457-6ad006e00372",
+      "employee_name": "test",
+      "type": "Annual Leave",
+      "from_date": "2026-09-09",
+      "to_date": "2026-12-09",
+      "days": 92,
+      "status": "Approved",
+      "reason": "tesr",
+      "created_at": "2026-02-26T13:47:36.588Z",
+      "updated_at": "2026-02-26T13:56:13.720Z"
+    }
+  ],
   "leaveBalances": [
     {
       "id": "ee67190c-2ff8-4c7b-b288-70d7ba3278db",
@@ -98,12 +112,12 @@
     {
       "id": "03bfee15-3d35-4455-8b12-a191613d2a08",
       "employee_id": "7b5a4b37-b56b-4fd3-8457-6ad006e00372",
-      "annual_leave": 20,
+      "annual_leave": -72,
       "sick_leave": 10,
       "maternity_leave": 0,
       "casual_leave": 5,
       "created_at": "2026-02-26T13:28:20.611Z",
-      "updated_at": "2026-02-26T13:28:20.611Z"
+      "updated_at": "2026-02-26T13:56:13.720Z"
     }
   ],
   "payrolls": [],
