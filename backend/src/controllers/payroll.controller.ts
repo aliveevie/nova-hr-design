@@ -111,7 +111,17 @@ export const createPayrollController = async (req: AuthRequest, res: Response) =
           payroll.month,
           payroll.year,
           payroll.net_pay
-        ).catch((err) => console.error("Failed to send payroll email:", err));
+        )
+          .then((result) => {
+            if (result.success) {
+              console.log(`✅ Payroll email sent to ${employee.email} for ${payroll.month}/${payroll.year}`);
+            } else {
+              console.error(`❌ Failed to send payroll email to ${employee.email}`);
+            }
+          })
+          .catch((err) => {
+            console.error(`❌ Error sending payroll email:`, err);
+          });
       }
     }
 
@@ -171,7 +181,17 @@ export const updatePayrollController = async (req: AuthRequest, res: Response) =
           payroll.month,
           payroll.year,
           payroll.net_pay
-        ).catch((err) => console.error("Failed to send payroll email:", err));
+        )
+          .then((result) => {
+            if (result.success) {
+              console.log(`✅ Payroll email sent to ${employee.email} for ${payroll.month}/${payroll.year}`);
+            } else {
+              console.error(`❌ Failed to send payroll email to ${employee.email}`);
+            }
+          })
+          .catch((err) => {
+            console.error(`❌ Error sending payroll email:`, err);
+          });
       }
     }
 

@@ -108,7 +108,17 @@ export const createEmployeeController = async (req: AuthRequest, res: Response) 
       employee.department,
       employee.tempPassword,
       loginUrl
-    ).catch((err) => console.error("Failed to send welcome email:", err));
+    )
+      .then((result) => {
+        if (result.success) {
+          console.log(`✅ Welcome email sent to ${employee.email}`);
+        } else {
+          console.error(`❌ Failed to send welcome email to ${employee.email}`);
+        }
+      })
+      .catch((err) => {
+        console.error(`❌ Error sending welcome email to ${employee.email}:`, err);
+      });
     
     // Keep tempPassword in response for display to admin (will be shown once, then removed)
     const tempPassword = employee.tempPassword;

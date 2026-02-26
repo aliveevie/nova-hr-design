@@ -23,7 +23,7 @@ interface EmailOptions {
   text?: string;
 }
 
-export const sendEmail = async (options: EmailOptions): Promise<{ success: boolean; previewUrl?: string }> => {
+export const sendEmail = async (options: EmailOptions): Promise<{ success: boolean; previewUrl?: string; messageId?: string }> => {
   try {
     const transport = await getTransporter();
     const info = await transport.sendMail({
@@ -37,13 +37,17 @@ export const sendEmail = async (options: EmailOptions): Promise<{ success: boole
     // If using Ethereal, get preview URL
     const previewUrl = nodemailer.getTestMessageUrl(info);
     if (previewUrl) {
-      console.log("Preview URL:", previewUrl);
-      return { success: true, previewUrl };
+      console.log("✅ Email sent via Ethereal. Preview URL:", previewUrl);
+      return { success: true, previewUrl, messageId: info.messageId };
     }
 
-    return { success: true };
-  } catch (error) {
-    console.error("Error sending email:", error);
+    console.log(`✅ Email sent successfully to ${options.to}. Message ID: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    console.error(`❌ Error sending email to ${options.to}:`, error.message || error);
+    if (error.code) {
+      console.error(`   Error code: ${error.code}`);
+    }
     return { success: false };
   }
 };

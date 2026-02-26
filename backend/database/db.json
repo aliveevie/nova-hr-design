@@ -31,6 +31,17 @@
       "initials": "T",
       "created_at": "2026-02-26T13:28:20.789Z",
       "updated_at": "2026-02-26T13:28:20.789Z"
+    },
+    {
+      "id": "d4b8c4bc-4374-4833-b99d-0f3f2eb7f97c",
+      "name": "test two",
+      "email": "test-two@galaxyitt.com.ng",
+      "password": "$2a$10$vxtHMPArMuq6eu.MoLvMF.JpqIK3DLS26r0Ki6KUS1AEe21fLvpKG",
+      "role": "Employee",
+      "employeeId": "83431097-fd7b-4664-bc63-e02ab1332541",
+      "initials": "TT",
+      "created_at": "2026-02-26T14:41:46.300Z",
+      "updated_at": "2026-02-26T14:41:46.300Z"
     }
   ],
   "employees": [
@@ -46,7 +57,7 @@
       "job_title": "Software Developer",
       "grade": "12",
       "level": "23",
-      "status": "Active",
+      "status": "Inactive",
       "join_date": "2023-09-09",
       "salary": 1488,
       "initials": "IA",
@@ -55,7 +66,7 @@
       "next_of_kin_phone": null,
       "next_of_kin_address": null,
       "created_at": "2026-02-26T13:20:35.368Z",
-      "updated_at": "2026-02-26T13:20:35.368Z"
+      "updated_at": "2026-02-26T14:40:18.276Z"
     },
     {
       "id": "7b5a4b37-b56b-4fd3-8457-6ad006e00372",
@@ -79,6 +90,29 @@
       "next_of_kin_address": null,
       "created_at": "2026-02-26T13:28:20.611Z",
       "updated_at": "2026-02-26T13:28:20.611Z"
+    },
+    {
+      "id": "83431097-fd7b-4664-bc63-e02ab1332541",
+      "name": "test two",
+      "email": "test-two@galaxyitt.com.ng",
+      "phone": "+2348130300304",
+      "date_of_birth": "2022-09-09",
+      "gender": "Male",
+      "address": "fee",
+      "department": "Marketing",
+      "job_title": "rrr",
+      "grade": null,
+      "level": null,
+      "status": "Active",
+      "join_date": "2005-06-05",
+      "salary": 440,
+      "initials": "TT",
+      "next_of_kin_name": null,
+      "next_of_kin_relationship": null,
+      "next_of_kin_phone": null,
+      "next_of_kin_address": null,
+      "created_at": "2026-02-26T14:41:46.229Z",
+      "updated_at": "2026-02-26T14:41:46.229Z"
     }
   ],
   "applicants": [],
@@ -118,6 +152,16 @@
       "casual_leave": 5,
       "created_at": "2026-02-26T13:28:20.611Z",
       "updated_at": "2026-02-26T13:56:13.720Z"
+    },
+    {
+      "id": "4bf7c2a2-3739-44f6-9a94-ba43a8ca5aca",
+      "employee_id": "83431097-fd7b-4664-bc63-e02ab1332541",
+      "annual_leave": 20,
+      "sick_leave": 10,
+      "maternity_leave": 0,
+      "casual_leave": 5,
+      "created_at": "2026-02-26T14:41:46.229Z",
+      "updated_at": "2026-02-26T14:41:46.229Z"
     }
   ],
   "payrolls": [],

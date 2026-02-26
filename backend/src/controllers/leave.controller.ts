@@ -72,16 +72,27 @@ export const createLeaveRequestController = async (req: AuthRequest, res: Respon
     const employee = db.data.employees.find((e: any) => e.id === validation.data.employeeId);
 
     if (employee) {
-      // For now, send to HR email - in production, get manager email
+      // Send notification to HR/Manager about new leave request
+      const hrEmail = "hr@galaxyitt.com.ng"; // In production, get manager email from department
       sendLeaveRequestEmail(
-        "hr@galaxyitt.com.ng", // Manager email
+        hrEmail,
         employee.name || "Employee",
         validation.data.type,
         validation.data.from,
         validation.data.to,
         days,
         validation.data.reason
-      ).catch((err) => console.error("Failed to send leave request email:", err));
+      )
+        .then((result) => {
+          if (result.success) {
+            console.log(`✅ Leave request notification sent to ${hrEmail} for ${employee.name}`);
+          } else {
+            console.error(`❌ Failed to send leave request notification to ${hrEmail}`);
+          }
+        })
+        .catch((err) => {
+          console.error(`❌ Error sending leave request notification:`, err);
+        });
     }
 
     const transformed = {
@@ -132,7 +143,17 @@ export const updateLeaveRequestController = async (req: AuthRequest, res: Respon
         request.from_date,
         request.to_date,
         status as "Approved" | "Rejected"
-      ).catch((err) => console.error("Failed to send approval email:", err));
+      )
+        .then((result) => {
+          if (result.success) {
+            console.log(`✅ Leave ${status.toLowerCase()} email sent to ${employee.email}`);
+          } else {
+            console.error(`❌ Failed to send leave ${status.toLowerCase()} email to ${employee.email}`);
+          }
+        })
+        .catch((err) => {
+          console.error(`❌ Error sending leave ${status.toLowerCase()} email:`, err);
+        });
     }
 
     const transformed = {

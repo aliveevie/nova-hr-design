@@ -81,7 +81,17 @@ export const createTrainingController = async (req: AuthRequest, res: Response) 
           employee.name,
           validation.data.title,
           validation.data.date
-        ).catch((err) => console.error("Failed to send training reminder:", err));
+        )
+          .then((result) => {
+            if (result.success) {
+              console.log(`✅ Training reminder email sent to ${employee.email}`);
+            } else {
+              console.error(`❌ Failed to send training reminder email to ${employee.email}`);
+            }
+          })
+          .catch((err) => {
+            console.error(`❌ Error sending training reminder email:`, err);
+          });
       }
     }
 

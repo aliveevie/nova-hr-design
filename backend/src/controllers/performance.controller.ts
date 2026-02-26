@@ -114,7 +114,17 @@ export const createPerformanceController = async (req: AuthRequest, res: Respons
         employee.name,
         performance.overall_score,
         performance.rating
-      ).catch((err) => console.error("Failed to send performance email:", err));
+      )
+        .then((result) => {
+          if (result.success) {
+            console.log(`✅ Performance review email sent to ${employee.email}`);
+          } else {
+            console.error(`❌ Failed to send performance review email to ${employee.email}`);
+          }
+        })
+        .catch((err) => {
+          console.error(`❌ Error sending performance review email:`, err);
+        });
     }
 
     const transformed = {

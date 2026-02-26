@@ -80,7 +80,17 @@ export const createDisciplineController = async (req: AuthRequest, res: Response
         employee.name,
         validation.data.type,
         validation.data.reason
-      ).catch((err) => console.error("Failed to send discipline email:", err));
+      )
+        .then((result) => {
+          if (result.success) {
+            console.log(`✅ Discipline notification email sent to ${employee.email}`);
+          } else {
+            console.error(`❌ Failed to send discipline email to ${employee.email}`);
+          }
+        })
+        .catch((err) => {
+          console.error(`❌ Error sending discipline email:`, err);
+        });
     }
 
     const transformed = {
