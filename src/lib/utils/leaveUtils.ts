@@ -12,7 +12,7 @@ export const calculateLeaveDays = (
 
 export const updateLeaveBalance = (
   balance: LeaveBalance,
-  leaveType: "Annual Leave" | "Sick Leave" | "Maternity Leave" | "Casual Leave",
+  leaveType: LeaveRequest["type"],
   days: number
 ): LeaveBalance => {
   const updated = { ...balance };
@@ -30,6 +30,9 @@ export const updateLeaveBalance = (
     case "Casual Leave":
       updated.casualLeave = Math.max(0, updated.casualLeave - days);
       break;
+    default:
+      // Other leave types (e.g. study, paternity, unpaid, compassionate) do not affect tracked balances
+      break;
   }
   
   return updated;
@@ -37,7 +40,7 @@ export const updateLeaveBalance = (
 
 export const getLeaveBalanceForType = (
   balance: LeaveBalance | undefined,
-  leaveType: "Annual Leave" | "Sick Leave" | "Maternity Leave" | "Casual Leave"
+  leaveType: LeaveRequest["type"]
 ): number => {
   if (!balance) return 0;
   

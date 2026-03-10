@@ -22,6 +22,9 @@ export interface Employee {
   name: string;
   email: string;
   phone: string;
+  language?: string;
+  ninNumber?: string;
+  bvn?: string;
   dateOfBirth?: string;
   gender?: "Male" | "Female" | "Other";
   address?: string;
@@ -83,7 +86,16 @@ export interface LeaveRequest {
   id: string;
   employeeId: string;
   employee: string;
-  type: "Annual Leave" | "Sick Leave" | "Maternity Leave" | "Casual Leave";
+  type:
+    | "Annual Leave"
+    | "Sick Leave"
+    | "Maternity Leave"
+    | "Casual Leave"
+    | "Study Leave"
+    | "Paternity Leave"
+    | "Examination Leave"
+    | "Voluntary/Unpaid Leave"
+    | "Compassionate Leave";
   from: string;
   to: string;
   days: number;

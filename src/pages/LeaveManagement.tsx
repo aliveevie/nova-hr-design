@@ -67,6 +67,11 @@ const LeaveManagement = () => {
     { type: "Sick Leave" as const, total: 10, balance: 0 },
     { type: "Maternity Leave" as const, total: 90, balance: 0 },
     { type: "Casual Leave" as const, total: 5, balance: 0 },
+    { type: "Study Leave" as const, total: 0, balance: 0 },
+    { type: "Paternity Leave" as const, total: 0, balance: 0 },
+    { type: "Examination Leave" as const, total: 0, balance: 0 },
+    { type: "Voluntary/Unpaid Leave" as const, total: 0, balance: 0 },
+    { type: "Compassionate Leave" as const, total: 0, balance: 0 },
   ];
 
   return (

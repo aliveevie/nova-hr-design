@@ -22,6 +22,9 @@ export const EmployeeForm = ({ employee, onSubmit, onCancel }: EmployeeFormProps
       name: employee.name,
       email: employee.email,
       phone: employee.phone,
+      language: employee.language,
+      ninNumber: employee.ninNumber,
+      bvn: employee.bvn,
       dateOfBirth: employee.dateOfBirth,
       gender: employee.gender,
       address: employee.address,
@@ -48,6 +51,9 @@ export const EmployeeForm = ({ employee, onSubmit, onCancel }: EmployeeFormProps
       setValue("name", employee.name);
       setValue("email", employee.email);
       setValue("phone", employee.phone);
+      setValue("language", employee.language || "");
+      setValue("ninNumber", employee.ninNumber || "");
+      setValue("bvn", employee.bvn || "");
       setValue("dateOfBirth", employee.dateOfBirth);
       setValue("gender", employee.gender);
       setValue("address", employee.address);
@@ -89,11 +95,25 @@ export const EmployeeForm = ({ employee, onSubmit, onCancel }: EmployeeFormProps
             <Input id="phone" {...register("phone", { required: true })} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="dateOfBirth">Date of Birth</Label>
-            <Input id="dateOfBirth" type="date" {...register("dateOfBirth")} />
+            <Label htmlFor="language">Language</Label>
+            <Input id="language" {...register("language")} placeholder="e.g. English, Hausa" />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="ninNumber">NIN Number</Label>
+            <Input id="ninNumber" {...register("ninNumber")} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="bvn">BVN</Label>
+            <Input id="bvn" {...register("bvn")} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="dateOfBirth">Date of Birth</Label>
+            <Input id="dateOfBirth" type="date" {...register("dateOfBirth")} />
+          </div>
           <div className="space-y-2">
             <Label htmlFor="gender">Gender</Label>
             <Select

@@ -440,6 +440,11 @@ const EmployeePortal = () => {
                             <SelectItem value="Sick Leave">Sick Leave</SelectItem>
                             <SelectItem value="Maternity Leave">Maternity Leave</SelectItem>
                             <SelectItem value="Casual Leave">Casual Leave</SelectItem>
+                            <SelectItem value="Study Leave">Study Leave</SelectItem>
+                            <SelectItem value="Paternity Leave">Paternity Leave</SelectItem>
+                            <SelectItem value="Examination Leave">Examination Leave</SelectItem>
+                            <SelectItem value="Voluntary/Unpaid Leave">Voluntary/Unpaid Leave</SelectItem>
+                            <SelectItem value="Compassionate Leave">Compassionate Leave</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -457,7 +462,16 @@ const EmployeePortal = () => {
                       </div>
                       {leaveBalance && (
                         <div className="text-sm text-muted-foreground">
-                          Available: {leaveBalance[leaveType === "Annual Leave" ? "annualLeave" : leaveType === "Sick Leave" ? "sickLeave" : leaveType === "Maternity Leave" ? "maternityLeave" : "casualLeave"]} days
+                          Available: {leaveType === "Annual Leave"
+                            ? leaveBalance.annualLeave
+                            : leaveType === "Sick Leave"
+                            ? leaveBalance.sickLeave
+                            : leaveType === "Maternity Leave"
+                            ? leaveBalance.maternityLeave
+                            : leaveType === "Casual Leave"
+                            ? leaveBalance.casualLeave
+                            : "N/A"}{" "}
+                          days
                         </div>
                       )}
                       <div className="flex justify-end gap-2">
