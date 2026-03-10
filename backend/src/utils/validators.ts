@@ -4,6 +4,9 @@ export const employeeSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
   phone: z.string().optional(),
+  language: z.string().optional(),
+  ninNumber: z.string().optional(),
+  bvn: z.string().optional(),
   dateOfBirth: z.string().optional(),
   gender: z.enum(["Male", "Female", "Other"]).optional(),
   address: z.string().optional(),
@@ -41,7 +44,17 @@ export const applicantSchema = z.object({
 
 export const leaveRequestSchema = z.object({
   employeeId: z.string().min(1),
-  type: z.enum(["Annual Leave", "Sick Leave", "Maternity Leave", "Casual Leave"]),
+  type: z.enum([
+    "Annual Leave",
+    "Sick Leave",
+    "Maternity Leave",
+    "Casual Leave",
+    "Study Leave",
+    "Paternity Leave",
+    "Examination Leave",
+    "Voluntary/Unpaid Leave",
+    "Compassionate Leave",
+  ]),
   from: z.string().min(1),
   to: z.string().min(1),
   reason: z.string().optional(),
