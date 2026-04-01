@@ -6,6 +6,8 @@ create table if not exists users (
   email text not null unique,
   password text not null,
   password_must_change boolean not null default false,
+  first_login_verified boolean not null default false,
+  first_login_verified_at timestamptz,
   role text not null check (role in ('HR Admin', 'Manager', 'Employee')),
   initials text not null,
   employee_id uuid null,
@@ -15,6 +17,24 @@ create table if not exists users (
 
 alter table users
   add column if not exists password_must_change boolean not null default false;
+alter table users
+  add column if not exists first_login_verified boolean not null default false;
+alter table users
+  add column if not exists first_login_verified_at timestamptz;
+
+create table if not exists login_verification_tokens (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  token_hash text not null,
+  ip_address text,
+  user_agent text,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_login_verify_user_id on login_verification_tokens(user_id);
+create index if not exists idx_login_verify_expires_at on login_verification_tokens(expires_at);
 
 create table if not exists employees (
   id uuid primary key default gen_random_uuid(),
@@ -124,5 +144,8 @@ values (
 on conflict (email) do nothing;
 
 update users
-set password_must_change = true
+set
+  password_must_change = true,
+  first_login_verified = false,
+  first_login_verified_at = null
 where email = 'mabubakar@galaxyitt.com.ng';

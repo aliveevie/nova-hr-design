@@ -5,10 +5,26 @@ import {
   requestPasswordReset,
   resetPasswordWithToken,
   changePassword,
+  verifyFirstLoginToken,
 } from "../services/auth.service.js";
 import { AuthRequest } from "../middleware/auth.middleware.js";
-import { sendPasswordResetEmail } from "../services/email.service.js";
+import {
+  sendAdminLoginNotificationEmail,
+  sendFirstLoginVerificationEmail,
+  sendPasswordResetEmail,
+} from "../services/email.service.js";
 import { env } from "../config/env.js";
+
+const getClientIp = (req: Request) => {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.length > 0) {
+    return forwarded.split(",")[0].trim();
+  }
+  if (Array.isArray(forwarded) && forwarded.length > 0) {
+    return forwarded[0];
+  }
+  return req.ip || "unknown";
+};
 
 export const loginController = async (req: Request, res: Response) => {
   try {
@@ -18,15 +34,73 @@ export const loginController = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Email and password are required" });
     }
 
-    const result = await login({ email, password });
+    const ipAddress = getClientIp(req);
+    const userAgent = req.headers["user-agent"] || "unknown";
+    const result = await login({ email, password }, { ipAddress, userAgent });
 
     if (!result) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
+    if ("requiresFirstLoginVerification" in result && result.requiresFirstLoginVerification) {
+      const verifyUrl = `${env.FRONTEND_URL}/first-login-verify?token=${result.verificationToken}`;
+      sendFirstLoginVerificationEmail(
+        result.user.email,
+        result.user.name,
+        verifyUrl,
+        30
+      ).catch((err) => {
+        console.error("First-login verification email send error:", err);
+      });
+
+      return res.status(202).json({
+        requiresFirstLoginVerification: true,
+        message: "Verification link sent to your email. Complete verification to continue.",
+      });
+    }
+
+    sendAdminLoginNotificationEmail(
+      result.user.email,
+      result.user.name,
+      ipAddress,
+      String(userAgent)
+    ).catch((err) => {
+      console.error("Admin login notification email send error:", err);
+    });
+
     res.json(result);
   } catch (error) {
     console.error("Login error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const verifyFirstLoginController = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: "Verification token is required" });
+    }
+
+    const result = await verifyFirstLoginToken(token);
+    if (!result) {
+      return res.status(400).json({ error: "Invalid or expired verification token" });
+    }
+
+    const ipAddress = getClientIp(req);
+    const userAgent = req.headers["user-agent"] || "unknown";
+    sendAdminLoginNotificationEmail(
+      result.user.email,
+      result.user.name,
+      ipAddress,
+      String(userAgent)
+    ).catch((err) => {
+      console.error("Admin login notification email send error:", err);
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("Verify first login error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };

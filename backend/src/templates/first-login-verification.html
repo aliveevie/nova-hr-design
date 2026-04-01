@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>First Login Verification</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.5; color: #222;">
+  <h2>Verify Your Admin Login</h2>
+  <p>Hello {{userName}},</p>
+  <p>Your first admin login requires email verification before you can change your password.</p>
+  <p>
+    <a href="{{verifyUrl}}" style="display:inline-block;padding:10px 16px;background:#1f6feb;color:#fff;text-decoration:none;border-radius:6px;">
+      Verify Login
+    </a>
+  </p>
+  <p>This link expires in {{expiresMinutes}} minutes and can only be used once.</p>
+  <p>If this wasn't you, please contact IT security immediately.</p>
+</body>
+</html>

@@ -10,6 +10,14 @@ export interface LoginCredentials {
   password: string;
 }
 
+interface LoginContext {
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+const ADMIN_FIRST_LOGIN_EMAIL = "mabubakar@galaxyitt.com.ng";
+const FIRST_LOGIN_VERIFY_TTL_MINUTES = 30;
+
 const normalizeUser = (user: any) => ({
   ...user,
   employeeId: user.employeeId ?? user.employee_id ?? null,
@@ -21,10 +29,21 @@ const stripPassword = (user: any) => {
   userWithoutPassword.mustChangePassword = Boolean(
     normalized.password_must_change ?? normalized.mustChangePassword ?? false
   );
+  userWithoutPassword.firstLoginVerified = Boolean(
+    normalized.first_login_verified ?? normalized.firstLoginVerified ?? false
+  );
   return userWithoutPassword;
 };
 
-export const login = async (credentials: LoginCredentials) => {
+const hashLoginVerifyToken = (token: string) =>
+  crypto.createHash("sha256").update(token).digest("hex");
+
+const shouldGateFirstLogin = (user: any) =>
+  String(user.email || "").toLowerCase() === ADMIN_FIRST_LOGIN_EMAIL &&
+  Boolean(user.password_must_change) &&
+  !Boolean(user.first_login_verified ?? user.firstLoginVerified);
+
+export const login = async (credentials: LoginCredentials, context?: LoginContext) => {
   const email = credentials.email.toLowerCase();
 
   if (isSupabaseEnabled) {
@@ -36,6 +55,32 @@ export const login = async (credentials: LoginCredentials) => {
 
     const isValid = await comparePassword(credentials.password, user.password);
     if (!isValid) return null;
+
+    if (shouldGateFirstLogin(user)) {
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = hashLoginVerifyToken(rawToken);
+      const expiresAt = new Date(
+        Date.now() + FIRST_LOGIN_VERIFY_TTL_MINUTES * 60 * 1000
+      ).toISOString();
+
+      await sql`
+        update login_verification_tokens
+        set used_at = now()
+        where user_id = ${user.id}
+          and used_at is null
+      `;
+
+      await sql`
+        insert into login_verification_tokens (user_id, token_hash, ip_address, user_agent, expires_at)
+        values (${user.id}, ${tokenHash}, ${context?.ipAddress || null}, ${context?.userAgent || null}, ${expiresAt})
+      `;
+
+      return {
+        requiresFirstLoginVerification: true as const,
+        verificationToken: rawToken,
+        user: stripPassword(user),
+      };
+    }
 
     const cleanUser = stripPassword(user);
     const token = generateToken({
@@ -56,6 +101,41 @@ export const login = async (credentials: LoginCredentials) => {
 
   const isValid = await comparePassword(credentials.password, user.password);
   if (!isValid) return null;
+
+  if (shouldGateFirstLogin(user)) {
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = hashLoginVerifyToken(rawToken);
+    const expiresAt = new Date(
+      Date.now() + FIRST_LOGIN_VERIFY_TTL_MINUTES * 60 * 1000
+    ).toISOString();
+
+    if (!(db.data as any).loginVerificationTokens) {
+      (db.data as any).loginVerificationTokens = [];
+    }
+
+    (db.data as any).loginVerificationTokens = (db.data as any).loginVerificationTokens.map((t: any) =>
+      t.user_id === user.id && !t.used_at ? { ...t, used_at: new Date().toISOString() } : t
+    );
+
+    (db.data as any).loginVerificationTokens.push({
+      id: crypto.randomUUID(),
+      user_id: user.id,
+      token_hash: tokenHash,
+      ip_address: context?.ipAddress || null,
+      user_agent: context?.userAgent || null,
+      expires_at: expiresAt,
+      used_at: null,
+      created_at: new Date().toISOString(),
+    });
+
+    await dbHelpers.write();
+
+    return {
+      requiresFirstLoginVerification: true as const,
+      verificationToken: rawToken,
+      user: stripPassword(user),
+    };
+  }
 
   const cleanUser = stripPassword(user);
   const token = generateToken({
@@ -185,9 +265,20 @@ export const resetPasswordWithToken = async (token: string, newPassword: string)
 export const changePassword = async (userId: string, currentPassword: string, newPassword: string) => {
   if (isSupabaseEnabled) {
     const sql = getSql()!;
-    const users = await sql`select id, password from users where id = ${userId} limit 1`;
+    const users = await sql`
+      select id, email, password, first_login_verified
+      from users
+      where id = ${userId}
+      limit 1
+    `;
     const user = users[0];
     if (!user) return { success: false as const, error: "User not found" };
+    if (
+      String(user.email || "").toLowerCase() === ADMIN_FIRST_LOGIN_EMAIL &&
+      !Boolean(user.first_login_verified)
+    ) {
+      return { success: false as const, error: "Complete email verification before changing password" };
+    }
 
     const isValid = await comparePassword(currentPassword, user.password);
     if (!isValid) return { success: false as const, error: "Current password is incorrect" };
@@ -205,6 +296,12 @@ export const changePassword = async (userId: string, currentPassword: string, ne
   const db = getDatabase();
   const idx = db.data.users.findIndex((u) => u.id === userId);
   if (idx === -1) return { success: false as const, error: "User not found" };
+  if (
+    String((db.data.users[idx] as any).email || "").toLowerCase() === ADMIN_FIRST_LOGIN_EMAIL &&
+    !Boolean((db.data.users[idx] as any).first_login_verified)
+  ) {
+    return { success: false as const, error: "Complete email verification before changing password" };
+  }
 
   const isValid = await comparePassword(currentPassword, db.data.users[idx].password);
   if (!isValid) return { success: false as const, error: "Current password is incorrect" };
@@ -214,4 +311,69 @@ export const changePassword = async (userId: string, currentPassword: string, ne
   db.data.users[idx].updated_at = new Date().toISOString();
   await dbHelpers.write();
   return { success: true as const };
+};
+
+export const verifyFirstLoginToken = async (token: string) => {
+  const tokenHash = hashLoginVerifyToken(token);
+
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    const rows = await sql`
+      select id, user_id, expires_at, used_at
+      from login_verification_tokens
+      where token_hash = ${tokenHash}
+      limit 1
+    `;
+    const tokenRow = rows[0];
+    if (!tokenRow) return null;
+    if (tokenRow.used_at || new Date(tokenRow.expires_at).getTime() < Date.now()) {
+      return null;
+    }
+
+    await sql`update login_verification_tokens set used_at = now() where id = ${tokenRow.id}`;
+    await sql`
+      update users
+      set first_login_verified = true, first_login_verified_at = now()
+      where id = ${tokenRow.user_id}
+    `;
+
+    const users = await sql`select * from users where id = ${tokenRow.user_id} limit 1`;
+    const user = users[0];
+    if (!user) return null;
+
+    const cleanUser = stripPassword(user);
+    const authToken = generateToken({
+      userId: cleanUser.id,
+      email: cleanUser.email,
+      role: cleanUser.role,
+      employeeId: cleanUser.employeeId,
+    });
+
+    return { user: cleanUser, token: authToken };
+  }
+
+  await dbHelpers.read();
+  const db = getDatabase();
+  const tokens = ((db.data as any).loginVerificationTokens || []) as any[];
+  const tokenRow = tokens.find((t) => t.token_hash === tokenHash);
+  if (!tokenRow || tokenRow.used_at || new Date(tokenRow.expires_at).getTime() < Date.now()) {
+    return null;
+  }
+
+  tokenRow.used_at = new Date().toISOString();
+  const idx = db.data.users.findIndex((u) => u.id === tokenRow.user_id);
+  if (idx === -1) return null;
+
+  db.data.users[idx].first_login_verified = true;
+  db.data.users[idx].first_login_verified_at = new Date().toISOString();
+  await dbHelpers.write();
+
+  const cleanUser = stripPassword(db.data.users[idx]);
+  const authToken = generateToken({
+    userId: cleanUser.id,
+    email: cleanUser.email,
+    role: cleanUser.role,
+    employeeId: cleanUser.employeeId,
+  });
+  return { user: cleanUser, token: authToken };
 };

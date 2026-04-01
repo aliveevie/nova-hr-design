@@ -279,3 +279,42 @@ export const sendPasswordResetEmail = async (
     html,
   });
 };
+
+export const sendFirstLoginVerificationEmail = async (
+  email: string,
+  userName: string,
+  verifyUrl: string,
+  expiresMinutes: number
+) => {
+  const template = loadTemplate("first-login-verification");
+  const html = replaceTemplateVariables(template, {
+    userName,
+    verifyUrl,
+    expiresMinutes: String(expiresMinutes),
+  });
+  return sendEmail({
+    to: email,
+    subject: "Verify your first admin login - NovaHR",
+    html,
+  });
+};
+
+export const sendAdminLoginNotificationEmail = async (
+  email: string,
+  userName: string,
+  ipAddress: string,
+  userAgent: string
+) => {
+  const template = loadTemplate("admin-login-notification");
+  const html = replaceTemplateVariables(template, {
+    userName,
+    ipAddress,
+    userAgent,
+    loginTime: new Date().toISOString(),
+  });
+  return sendEmail({
+    to: email,
+    subject: "Successful admin login detected - NovaHR",
+    html,
+  });
+};
