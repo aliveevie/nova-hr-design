@@ -23,6 +23,7 @@ import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import ChangePassword from "./pages/ChangePassword";
+import FirstLoginVerify from "./pages/FirstLoginVerify";
 import Index from "./pages/Index";
 import Employees from "./pages/Employees";
 import EmployeeDetail from "./pages/EmployeeDetail";
@@ -59,6 +60,7 @@ const App = () => (
                           <BrowserRouter>
                             <Routes>
                               <Route path="/login" element={<Login />} />
+                              <Route path="/first-login-verify" element={<FirstLoginVerify />} />
                               <Route path="/forgot-password" element={<ForgotPassword />} />
                               <Route path="/reset-password" element={<ResetPassword />} />
                               <Route element={<ProtectedRoute />}>

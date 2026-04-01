@@ -21,7 +21,16 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const loggedInUser = await login(email, password);
+      const loginResult = await login(email, password);
+      if (loginResult.requiresFirstLoginVerification) {
+        toast({
+          title: "Email verification required",
+          description: loginResult.message || "Check your email to continue your first admin login.",
+        });
+        return;
+      }
+
+      const loggedInUser = loginResult.user;
       if (loggedInUser) {
         if (loggedInUser.mustChangePassword) {
           toast({

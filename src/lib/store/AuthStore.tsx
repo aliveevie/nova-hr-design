@@ -5,7 +5,11 @@ import { authApi } from "@/lib/api";
 interface AuthContextType {
   user: AuthenticatedUser | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<AuthenticatedUser | null>;
+  login: (
+    email: string,
+    password: string
+  ) => Promise<{ user: AuthenticatedUser | null; requiresFirstLoginVerification?: boolean; message?: string }>;
+  verifyFirstLogin: (token: string) => Promise<AuthenticatedUser | null>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
   logout: () => void;
 }
@@ -43,17 +47,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  const login = async (email: string, password: string): Promise<AuthenticatedUser | null> => {
+  const login = async (
+    email: string,
+    password: string
+  ): Promise<{ user: AuthenticatedUser | null; requiresFirstLoginVerification?: boolean; message?: string }> => {
     try {
       const response = await authApi.login({ email, password });
+      if ("requiresFirstLoginVerification" in response) {
+        setUser(null);
+        setIsAuthenticated(false);
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+        localStorage.removeItem("auth_token");
+        return {
+          user: null,
+          requiresFirstLoginVerification: true,
+          message: response.message,
+        };
+      }
+
       const userToStore: AuthenticatedUser = response.user;
-      
+
+      setUser(userToStore);
+      setIsAuthenticated(true);
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userToStore));
+      return { user: userToStore };
+    } catch (error) {
+      console.error("Login error:", error);
+      return { user: null };
+    }
+  };
+
+  const verifyFirstLogin = async (token: string): Promise<AuthenticatedUser | null> => {
+    try {
+      const response = await authApi.verifyFirstLogin(token);
+      const userToStore: AuthenticatedUser = response.user;
       setUser(userToStore);
       setIsAuthenticated(true);
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userToStore));
       return userToStore;
     } catch (error) {
-      console.error("Login error:", error);
+      console.error("Verify first login error:", error);
       return null;
     }
   };
@@ -88,7 +121,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, changePassword, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, login, verifyFirstLogin, changePassword, logout }}>
       {children}
     </AuthContext.Provider>
   );

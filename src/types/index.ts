@@ -8,6 +8,7 @@ export interface User {
   initials: string;
   employeeId?: string;
   mustChangePassword?: boolean;
+  firstLoginVerified?: boolean;
 }
 
 export type AuthenticatedUser = Omit<User, "password">;

@@ -9,6 +9,14 @@ const ProtectedRoute = () => {
     return <Navigate to="/login" replace />;
   }
 
+  if (
+    user?.mustChangePassword &&
+    user?.firstLoginVerified === false &&
+    location.pathname !== "/login"
+  ) {
+    return <Navigate to="/login" replace />;
+  }
+
   if (user?.mustChangePassword && location.pathname !== "/change-password") {
     return <Navigate to="/change-password" replace />;
   }

@@ -14,14 +14,25 @@ export interface AuthResponse {
     initials: string;
     employeeId?: string;
     mustChangePassword?: boolean;
+    firstLoginVerified?: boolean;
   };
   token: string;
 }
 
+export interface FirstLoginVerificationRequired {
+  requiresFirstLoginVerification: true;
+  message: string;
+}
+
 export const authApi = {
-  login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
-    const response = await apiClient.post<AuthResponse>("/auth/login", credentials);
-    if (response.token) {
+  login: async (
+    credentials: LoginCredentials
+  ): Promise<AuthResponse | FirstLoginVerificationRequired> => {
+    const response = await apiClient.post<AuthResponse | FirstLoginVerificationRequired>(
+      "/auth/login",
+      credentials
+    );
+    if ("token" in response && response.token) {
       localStorage.setItem("auth_token", response.token);
     }
     return response;
@@ -52,6 +63,14 @@ export const authApi = {
       currentPassword,
       newPassword,
     });
+  },
+
+  verifyFirstLogin: async (token: string): Promise<AuthResponse> => {
+    const response = await apiClient.post<AuthResponse>("/auth/first-login/verify", { token });
+    if (response.token) {
+      localStorage.setItem("auth_token", response.token);
+    }
+    return response;
   },
 };
 
