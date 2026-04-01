@@ -7,6 +7,7 @@ export interface User {
   role: "HR Admin" | "Manager" | "Employee";
   initials: string;
   employeeId?: string;
+  mustChangePassword?: boolean;
 }
 
 export type AuthenticatedUser = Omit<User, "password">;

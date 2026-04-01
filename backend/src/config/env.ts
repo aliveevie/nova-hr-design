@@ -2,9 +2,16 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+const toBool = (value: string | undefined, fallback = false) => {
+  if (value === undefined) return fallback;
+  return value.toLowerCase() === "true";
+};
+
 export const env = {
   PORT: parseInt(process.env.PORT || "3001", 10),
   NODE_ENV: process.env.NODE_ENV || "development",
+  DEVELOPMENT: toBool(process.env.DEVELOPMENT, (process.env.NODE_ENV || "development") === "development"),
+  PRODUCTION: toBool(process.env.PRODUCTION, (process.env.NODE_ENV || "development") === "production"),
   JWT_SECRET: process.env.JWT_SECRET || "secret-key",
   DATABASE_PATH: process.env.DATABASE_PATH || "./database/hr.db",
   FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:5173",
@@ -16,5 +23,11 @@ export const env = {
   SMTP_USER: process.env.SMTP_USER || "",
   SMTP_PASS: process.env.SMTP_PASS || "",
   EMAIL_FROM: process.env.EMAIL_FROM || "",
+  USE_SUPABASE: process.env.USE_SUPABASE || "false",
+  DATABASE_URL: process.env.DATABASE_URL || "",
+  AIVEN_DATABASE_URL: process.env.AIVEN_DATABASE_URL || "",
+  AIVEN_CA_CERT: process.env.AIVEN_CA_CERT || "",
+  AIVEN_CA_CERT_PATH: process.env.AIVEN_CA_CERT_PATH || "",
+  PASSWORD_RESET_TOKEN_TTL_MINUTES: parseInt(process.env.PASSWORD_RESET_TOKEN_TTL_MINUTES || "60", 10),
 };
 

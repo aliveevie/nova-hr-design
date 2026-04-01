@@ -102,9 +102,8 @@ export const createEmployeeController = async (req: AuthRequest, res: Response) 
       return res.status(400).json({ error: "Invalid data", details: validation.error.errors });
     }
 
-    const employee = await createEmployee(validation.data);
+    const employee: any = await createEmployee(validation.data);
 
-    // Send welcome email with login credentials
     const loginUrl = `${env.FRONTEND_URL}/login`;
     sendEmployeeWelcomeWithLogin(
       employee.email,
@@ -298,7 +297,7 @@ export const bulkUploadEmployeesController = async (req: AuthRequest, res: Respo
     }
 
     const loginUrl = `${env.FRONTEND_URL}/login`;
-    result.createdEmployees.forEach((employee) => {
+    result.createdEmployees.forEach((employee: any) => {
       sendEmployeeWelcomeWithLogin(
         employee.email,
         employee.name,
@@ -319,7 +318,7 @@ export const bulkUploadEmployeesController = async (req: AuthRequest, res: Respo
         });
     });
 
-    const transformed = result.createdEmployees.map((employee) => ({
+    const transformed = result.createdEmployees.map((employee: any) => ({
       id: employee.id,
       name: employee.name,
       email: employee.email,

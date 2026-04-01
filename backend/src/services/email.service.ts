@@ -260,3 +260,22 @@ export const sendEmployeeWelcomeWithLogin = async (
   });
 };
 
+
+export const sendPasswordResetEmail = async (
+  email: string,
+  userName: string,
+  resetUrl: string,
+  expiresMinutes: number
+) => {
+  const template = loadTemplate("password-reset");
+  const html = replaceTemplateVariables(template, {
+    userName,
+    resetUrl,
+    expiresMinutes: String(expiresMinutes),
+  });
+  return sendEmail({
+    to: email,
+    subject: "Reset your NovaHR password",
+    html,
+  });
+};

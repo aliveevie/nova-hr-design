@@ -3,6 +3,9 @@ import {
   loginController,
   meController,
   logoutController,
+  forgotPasswordController,
+  resetPasswordController,
+  changePasswordController,
 } from "../controllers/auth.controller.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 
@@ -10,7 +13,9 @@ const router = Router();
 
 router.post("/login", loginController);
 router.post("/logout", logoutController);
+router.post("/forgot-password", forgotPasswordController);
+router.post("/reset-password", resetPasswordController);
+router.post("/change-password", authenticate, changePasswordController);
 router.get("/me", authenticate, meController);
 
 export default router;
-

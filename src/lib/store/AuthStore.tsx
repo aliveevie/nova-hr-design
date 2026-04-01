@@ -6,6 +6,7 @@ interface AuthContextType {
   user: AuthenticatedUser | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<AuthenticatedUser | null>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
   logout: () => void;
 }
 
@@ -57,6 +58,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const changePassword = async (currentPassword: string, newPassword: string): Promise<boolean> => {
+    try {
+      await authApi.changePassword(currentPassword, newPassword);
+      setUser((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, mustChangePassword: false };
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updated));
+        return updated;
+      });
+      return true;
+    } catch (error) {
+      console.error("Change password error:", error);
+      return false;
+    }
+  };
+
   const logout = async () => {
     try {
       await authApi.logout();
@@ -71,7 +88,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, login, changePassword, logout }}>
       {children}
     </AuthContext.Provider>
   );

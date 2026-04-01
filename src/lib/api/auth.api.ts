@@ -13,6 +13,7 @@ export interface AuthResponse {
     role: string;
     initials: string;
     employeeId?: string;
+    mustChangePassword?: boolean;
   };
   token: string;
 }
@@ -33,6 +34,24 @@ export const authApi = {
 
   getMe: async (): Promise<{ user: AuthResponse["user"] }> => {
     return apiClient.get<{ user: AuthResponse["user"] }>("/auth/me");
+  },
+
+  forgotPassword: async (email: string): Promise<{ message: string }> => {
+    return apiClient.post<{ message: string }>("/auth/forgot-password", { email });
+  },
+
+  resetPassword: async (token: string, password: string): Promise<{ message: string }> => {
+    return apiClient.post<{ message: string }>("/auth/reset-password", { token, password });
+  },
+
+  changePassword: async (
+    currentPassword: string,
+    newPassword: string
+  ): Promise<{ message: string }> => {
+    return apiClient.post<{ message: string }>("/auth/change-password", {
+      currentPassword,
+      newPassword,
+    });
   },
 };
 

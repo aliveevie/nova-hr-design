@@ -1,7 +1,7 @@
 import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 import { env } from "./env.js";
-import { readFileSync, existsSync, mkdirSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import bcrypt from "bcryptjs";
@@ -62,6 +62,12 @@ const initializeDatabase = async () => {
 
   await db.read();
   
+  // In production with Supabase, avoid mutating local JSON fallback data
+  if (env.NODE_ENV === "production" || env.USE_SUPABASE === "true") {
+    db.data = { ...defaultData, ...(db.data || {}) };
+    return;
+  }
+
   // If database is empty, initialize with default data
   if (!db.data || Object.keys(db.data).length === 0) {
     db.data = { ...defaultData };

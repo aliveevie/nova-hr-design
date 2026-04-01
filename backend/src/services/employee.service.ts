@@ -2,11 +2,57 @@ import { getDatabase, dbHelpers } from "../config/database.js";
 import { randomUUID } from "crypto";
 import { hashPassword } from "../utils/password.util.js";
 import { employeeSchema } from "../utils/validators.js";
+import { getSql, isSupabaseEnabled } from "../config/supabase.js";
+
+const makeInitials = (name: string) =>
+  name
+    .split(" ")
+    .map((n: string) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+const mapEmployeeInputToDb = (employeeData: any) => ({
+  name: employeeData.name,
+  email: employeeData.email,
+  phone: employeeData.phone || null,
+  language: employeeData.language || null,
+  nin_number: employeeData.ninNumber || null,
+  bvn: employeeData.bvn || null,
+  date_of_birth: employeeData.dateOfBirth || null,
+  gender: employeeData.gender || null,
+  address: employeeData.address || null,
+  department: employeeData.department,
+  job_title: employeeData.jobTitle,
+  grade: employeeData.grade || null,
+  level: employeeData.level || null,
+  status: employeeData.status,
+  join_date: employeeData.joinDate,
+  salary: employeeData.salary,
+  initials: makeInitials(employeeData.name),
+  next_of_kin_name: employeeData.nextOfKin?.name || null,
+  next_of_kin_relationship: employeeData.nextOfKin?.relationship || null,
+  next_of_kin_phone: employeeData.nextOfKin?.phone || null,
+  next_of_kin_address: employeeData.nextOfKin?.address || null,
+});
 
 export const getAllEmployees = async (filters?: {
   department?: string;
   status?: string;
 }) => {
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+
+    if (filters?.department && filters?.status) {
+      return sql`select * from employees where department = ${filters.department} and status = ${filters.status} order by created_at desc`;
+    } else if (filters?.department) {
+      return sql`select * from employees where department = ${filters.department} order by created_at desc`;
+    } else if (filters?.status) {
+      return sql`select * from employees where status = ${filters.status} order by created_at desc`;
+    }
+    return sql`select * from employees order by created_at desc`;
+  }
+
   await dbHelpers.read();
   const db = getDatabase();
   let employees = [...db.data.employees];
@@ -19,58 +65,79 @@ export const getAllEmployees = async (filters?: {
     employees = employees.filter((e) => e.status === filters.status);
   }
 
-  return employees.sort((a, b) => 
+  return employees.sort((a, b) =>
     new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
   );
 };
 
 export const getEmployeeById = async (id: string) => {
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    const rows = await sql`select * from employees where id = ${id} limit 1`;
+    return rows[0] || null;
+  }
+
   await dbHelpers.read();
   const db = getDatabase();
   return db.data.employees.find((e) => e.id === id);
 };
 
 export const createEmployee = async (employeeData: any) => {
+  const tempPassword =
+    Math.random().toString(36).slice(-12) +
+    Math.random().toString(36).slice(-12).toUpperCase() +
+    "!@#";
+  const hashedPassword = await hashPassword(tempPassword);
+
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    const employeeId = randomUUID();
+    const userId = randomUUID();
+    const mapped = mapEmployeeInputToDb(employeeData);
+
+    const [employee] = await sql`
+      insert into employees (
+        id, name, email, phone, language, nin_number, bvn,
+        date_of_birth, gender, address, department, job_title,
+        grade, level, status, join_date, salary, initials,
+        next_of_kin_name, next_of_kin_relationship, next_of_kin_phone, next_of_kin_address
+      ) values (
+        ${employeeId}, ${mapped.name}, ${mapped.email}, ${mapped.phone},
+        ${mapped.language}, ${mapped.nin_number}, ${mapped.bvn},
+        ${mapped.date_of_birth}, ${mapped.gender}, ${mapped.address},
+        ${mapped.department}, ${mapped.job_title}, ${mapped.grade}, ${mapped.level},
+        ${mapped.status}, ${mapped.join_date}, ${mapped.salary}, ${mapped.initials},
+        ${mapped.next_of_kin_name}, ${mapped.next_of_kin_relationship},
+        ${mapped.next_of_kin_phone}, ${mapped.next_of_kin_address}
+      ) returning *
+    `;
+
+    await sql`
+      insert into leave_balances (id, employee_id, annual_leave, sick_leave, maternity_leave, casual_leave)
+      values (${randomUUID()}, ${employeeId}, 20, 10, 0, 5)
+    `;
+
+    await sql`
+      insert into users (id, name, email, password, role, employee_id, initials)
+      values (${userId}, ${mapped.name}, ${mapped.email}, ${hashedPassword}, 'Employee', ${employeeId}, ${mapped.initials})
+    `;
+
+    return { ...employee, tempPassword };
+  }
+
   await dbHelpers.read();
   const db = getDatabase();
   const id = randomUUID();
-  const initials = employeeData.name
-    .split(" ")
-    .map((n: string) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
 
   const newEmployee = {
     id,
-    name: employeeData.name,
-    email: employeeData.email,
-    phone: employeeData.phone || null,
-    language: employeeData.language || null,
-    nin_number: employeeData.ninNumber || null,
-    bvn: employeeData.bvn || null,
-    date_of_birth: employeeData.dateOfBirth || null,
-    gender: employeeData.gender || null,
-    address: employeeData.address || null,
-    department: employeeData.department,
-    job_title: employeeData.jobTitle,
-    grade: employeeData.grade || null,
-    level: employeeData.level || null,
-    status: employeeData.status,
-    join_date: employeeData.joinDate,
-    salary: employeeData.salary,
-    initials,
-    next_of_kin_name: employeeData.nextOfKin?.name || null,
-    next_of_kin_relationship: employeeData.nextOfKin?.relationship || null,
-    next_of_kin_phone: employeeData.nextOfKin?.phone || null,
-    next_of_kin_address: employeeData.nextOfKin?.address || null,
+    ...mapEmployeeInputToDb(employeeData),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
 
   db.data.employees.push(newEmployee);
 
-  // Create leave balance
   db.data.leaveBalances.push({
     id: randomUUID(),
     employee_id: id,
@@ -82,44 +149,62 @@ export const createEmployee = async (employeeData: any) => {
     updated_at: new Date().toISOString(),
   });
 
-  // Generate temporary password for employee login
-  const tempPassword = Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12).toUpperCase() + "!@#";
-  const hashedPassword = await hashPassword(tempPassword);
-  
-  // Create user account for employee
-  const userId = randomUUID();
-  const userInitials = employeeData.name
-    .split(" ")
-    .map((n: string) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-  
   db.data.users.push({
-    id: userId,
+    id: randomUUID(),
     name: employeeData.name,
     email: employeeData.email,
     password: hashedPassword,
     role: "Employee",
     employeeId: id,
-    initials: userInitials,
+    initials: makeInitials(employeeData.name),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
 
   await dbHelpers.write();
-  
-  // Return employee with temporary password for email
   return { ...newEmployee, tempPassword };
 };
 
 export const updateEmployee = async (id: string, employeeData: any) => {
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    const existing = await getEmployeeById(id);
+    if (!existing) return null;
+
+    const merged = mapEmployeeInputToDb({
+      ...existing,
+      ...employeeData,
+      nextOfKin: employeeData.nextOfKin ?? {
+        name: existing.next_of_kin_name,
+        relationship: existing.next_of_kin_relationship,
+        phone: existing.next_of_kin_phone,
+        address: existing.next_of_kin_address,
+      },
+    });
+
+    const [updated] = await sql`
+      update employees set
+        name = ${merged.name}, email = ${merged.email}, phone = ${merged.phone},
+        language = ${merged.language}, nin_number = ${merged.nin_number}, bvn = ${merged.bvn},
+        date_of_birth = ${merged.date_of_birth}, gender = ${merged.gender}, address = ${merged.address},
+        department = ${merged.department}, job_title = ${merged.job_title},
+        grade = ${merged.grade}, level = ${merged.level},
+        status = ${merged.status}, join_date = ${merged.join_date}, salary = ${merged.salary},
+        initials = ${merged.initials},
+        next_of_kin_name = ${merged.next_of_kin_name},
+        next_of_kin_relationship = ${merged.next_of_kin_relationship},
+        next_of_kin_phone = ${merged.next_of_kin_phone},
+        next_of_kin_address = ${merged.next_of_kin_address}
+      where id = ${id}
+      returning *
+    `;
+    return updated;
+  }
+
   await dbHelpers.read();
   const db = getDatabase();
   const index = db.data.employees.findIndex((e) => e.id === id);
-  if (index === -1) {
-    return null;
-  }
+  if (index === -1) return null;
 
   const existing = db.data.employees[index];
   db.data.employees[index] = {
@@ -140,10 +225,22 @@ export const updateEmployee = async (id: string, employeeData: any) => {
     status: employeeData.status || existing.status,
     join_date: employeeData.joinDate || existing.join_date,
     salary: employeeData.salary !== undefined ? employeeData.salary : existing.salary,
-    next_of_kin_name: employeeData.nextOfKin?.name !== undefined ? employeeData.nextOfKin.name : existing.next_of_kin_name,
-    next_of_kin_relationship: employeeData.nextOfKin?.relationship !== undefined ? employeeData.nextOfKin.relationship : existing.next_of_kin_relationship,
-    next_of_kin_phone: employeeData.nextOfKin?.phone !== undefined ? employeeData.nextOfKin.phone : existing.next_of_kin_phone,
-    next_of_kin_address: employeeData.nextOfKin?.address !== undefined ? employeeData.nextOfKin.address : existing.next_of_kin_address,
+    next_of_kin_name:
+      employeeData.nextOfKin?.name !== undefined
+        ? employeeData.nextOfKin.name
+        : existing.next_of_kin_name,
+    next_of_kin_relationship:
+      employeeData.nextOfKin?.relationship !== undefined
+        ? employeeData.nextOfKin.relationship
+        : existing.next_of_kin_relationship,
+    next_of_kin_phone:
+      employeeData.nextOfKin?.phone !== undefined
+        ? employeeData.nextOfKin.phone
+        : existing.next_of_kin_phone,
+    next_of_kin_address:
+      employeeData.nextOfKin?.address !== undefined
+        ? employeeData.nextOfKin.address
+        : existing.next_of_kin_address,
     updated_at: new Date().toISOString(),
   };
 
@@ -152,11 +249,16 @@ export const updateEmployee = async (id: string, employeeData: any) => {
 };
 
 export const deleteEmployee = async (id: string) => {
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    await sql`update employees set status = 'Inactive' where id = ${id}`;
+    return true;
+  }
+
   await dbHelpers.read();
   const db = getDatabase();
   const index = db.data.employees.findIndex((e) => e.id === id);
   if (index !== -1) {
-    // Soft delete
     db.data.employees[index].status = "Inactive";
     db.data.employees[index].updated_at = new Date().toISOString();
     await dbHelpers.write();
@@ -165,6 +267,11 @@ export const deleteEmployee = async (id: string) => {
 };
 
 export const getEmployeeDocuments = async (employeeId: string) => {
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    return sql`select * from employee_documents where employee_id = ${employeeId} order by uploaded_date desc`;
+  }
+
   await dbHelpers.read();
   const db = getDatabase();
   return db.data.employeeDocuments
@@ -173,18 +280,35 @@ export const getEmployeeDocuments = async (employeeId: string) => {
 };
 
 export const bulkCreateEmployees = async (rows: Record<string, unknown>[]) => {
-  await dbHelpers.read();
-  const db = getDatabase();
+  let existingEmployees: any[] = [];
+  let existingUsers: any[] = [];
+
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    const [empData, userData] = await Promise.all([
+      sql`select email, nin_number, bvn from employees`,
+      sql`select email from users`,
+    ]);
+    existingEmployees = empData;
+    existingUsers = userData;
+  } else {
+    await dbHelpers.read();
+    const db = getDatabase();
+    existingEmployees = db.data.employees;
+    existingUsers = db.data.users;
+  }
 
   const errors: Array<{ row: number; field: string; message: string; rawValue?: unknown }> = [];
   const validRows: any[] = [];
 
   const existingEmails = new Set(
-    [...db.data.employees.map((e) => String(e.email || "").toLowerCase()), ...db.data.users.map((u) => String(u.email || "").toLowerCase())]
-      .filter(Boolean)
+    [
+      ...existingEmployees.map((e) => String(e.email || "").toLowerCase()),
+      ...existingUsers.map((u) => String(u.email || "").toLowerCase()),
+    ].filter(Boolean)
   );
-  const existingNins = new Set(db.data.employees.map((e) => String(e.nin_number || "")).filter(Boolean));
-  const existingBvns = new Set(db.data.employees.map((e) => String(e.bvn || "")).filter(Boolean));
+  const existingNins = new Set(existingEmployees.map((e) => String(e.nin_number || "")).filter(Boolean));
+  const existingBvns = new Set(existingEmployees.map((e) => String(e.bvn || "")).filter(Boolean));
 
   const seenEmails = new Set<string>();
   const seenNins = new Set<string>();

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/store/AuthStore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,14 @@ const Login = () => {
     try {
       const loggedInUser = await login(email, password);
       if (loggedInUser) {
+        if (loggedInUser.mustChangePassword) {
+          toast({
+            title: "Password update required",
+            description: "Change your password to continue.",
+          });
+          navigate("/change-password");
+          return;
+        }
         toast({
           title: "Login successful",
           description: "Welcome back!",
@@ -87,6 +95,11 @@ const Login = () => {
                 required
                 disabled={isLoading}
               />
+            </div>
+            <div className="text-right">
+              <Link to="/forgot-password" className="text-sm text-primary underline">
+                Forgot password?
+              </Link>
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? "Logging in..." : "Login"}
