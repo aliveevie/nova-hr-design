@@ -1,7 +1,6 @@
 import path from "path";
 import XLSX from "xlsx";
 import mammoth from "mammoth";
-import { PDFParse } from "pdf-parse";
 
 const headerMap: Record<string, string> = {
   name: "name",
@@ -166,6 +165,9 @@ export const parseEmployeeImportFile = async (
     }
 
     if (ext === ".pdf") {
+      // Lazy import to avoid loading PDF runtime polyfills during cold start
+      // for non-upload routes in serverless environments.
+      const { PDFParse } = await import("pdf-parse");
       const parser = new PDFParse({ data: file.buffer });
       try {
         const tableResult = await parser.getTable();
