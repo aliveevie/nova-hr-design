@@ -25,5 +25,18 @@ export const employeeApi = {
   delete: async (id: string): Promise<{ message: string }> => {
     return apiClient.delete<{ message: string }>(`/employees/${id}`);
   },
+
+  bulkUpload: async (
+    file: File
+  ): Promise<{
+    message: string;
+    count: number;
+    employees: Employee[];
+    errors?: Array<{ row: number; field: string; message: string; rawValue?: unknown }>;
+  }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiClient.postForm("/employees/bulk-upload", formData);
+  },
 };
 

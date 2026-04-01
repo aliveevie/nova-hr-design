@@ -5,6 +5,12 @@ import { employeeApi } from "@/lib/api";
 interface EmployeeContextType {
   employees: Employee[];
   addEmployee: (employee: Omit<Employee, "id" | "initials">) => Promise<void>;
+  bulkUploadEmployees: (file: File) => Promise<{
+    message: string;
+    count: number;
+    employees: Employee[];
+    errors?: Array<{ row: number; field: string; message: string; rawValue?: unknown }>;
+  }>;
   updateEmployee: (id: string, employee: Partial<Employee>) => Promise<void>;
   deleteEmployee: (id: string) => Promise<void>;
   getEmployee: (id: string) => Employee | undefined;
@@ -41,6 +47,17 @@ export const EmployeeProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const bulkUploadEmployees = async (file: File) => {
+    try {
+      const response = await employeeApi.bulkUpload(file);
+      await refreshEmployees();
+      return response;
+    } catch (error) {
+      console.error("Error bulk uploading employees:", error);
+      throw error;
+    }
+  };
+
   const updateEmployee = async (id: string, updates: Partial<Employee>) => {
     try {
       const response = await employeeApi.update(id, updates);
@@ -68,7 +85,15 @@ export const EmployeeProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <EmployeeContext.Provider
-      value={{ employees, addEmployee, updateEmployee, deleteEmployee, getEmployee, refreshEmployees }}
+      value={{
+        employees,
+        addEmployee,
+        bulkUploadEmployees,
+        updateEmployee,
+        deleteEmployee,
+        getEmployee,
+        refreshEmployees,
+      }}
     >
       {children}
     </EmployeeContext.Provider>

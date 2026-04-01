@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Search, Eye, Edit, Trash2 } from "lucide-react";
+import { Plus, Search, Eye, Edit, Trash2, Upload, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -23,8 +23,12 @@ const statusClass: Record<string, string> = {
 const Employees = () => {
   const [search, setSearch] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadErrors, setUploadErrors] = useState<Array<{ row: number; field: string; message: string; rawValue?: unknown }>>([]);
   const [editingEmployee, setEditingEmployee] = useState<Employee | undefined>();
-  const { employees, addEmployee, updateEmployee, deleteEmployee } = useEmployees();
+  const { employees, addEmployee, bulkUploadEmployees, updateEmployee, deleteEmployee } = useEmployees();
   const { toast } = useToast();
 
   const filtered = employees.filter(
@@ -69,6 +73,148 @@ const Employees = () => {
     });
   };
 
+  const handleBulkUpload = async () => {
+    if (!bulkFile) {
+      toast({
+        title: "No file selected",
+        description: "Please select an Excel, PDF, or Word file.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      setUploadErrors([]);
+      const result = await bulkUploadEmployees(bulkFile);
+      setBulkFile(null);
+      setIsBulkDialogOpen(false);
+      toast({
+        title: "Upload successful",
+        description: `${result.count} staff records imported and welcome emails queued.`,
+      });
+    } catch (error: any) {
+      const details = error?.details;
+      const rowErrors = Array.isArray(details?.errors) ? details.errors : [];
+      setUploadErrors(rowErrors);
+      toast({
+        title: "Upload failed",
+        description: error?.message || "Bulk upload failed",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+
+  const handleDownloadUploadTemplate = () => {
+    const headers = [
+      "Name",
+      "Email",
+      "Phone",
+      "Language",
+      "NIN Number",
+      "BVN",
+      "Department",
+      "Job Title",
+      "Grade",
+      "Level",
+      "Status",
+      "Join Date",
+      "Salary",
+      "Date of Birth",
+      "Gender",
+      "Address",
+    ];
+
+    const sampleRow = [
+      "Jane Doe",
+      "jane.doe@company.com",
+      "08012345678",
+      "English",
+      "12345678901",
+      "22345678901",
+      "Engineering",
+      "Software Engineer",
+      "G7",
+      "L3",
+      "Active",
+      "2026-03-01",
+      "750000",
+      "1995-08-14",
+      "Female",
+      "Lagos, Nigeria",
+    ];
+
+    const csv = [headers, sampleRow]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "staff-upload-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadStaffData = () => {
+    const headers = [
+      "Name",
+      "Email",
+      "Phone",
+      "Language",
+      "NIN Number",
+      "BVN",
+      "Department",
+      "Job Title",
+      "Grade",
+      "Level",
+      "Status",
+      "Join Date",
+      "Salary",
+      "Date of Birth",
+      "Gender",
+      "Address",
+    ];
+    const rows = employees.map((emp) => [
+      emp.name,
+      emp.email,
+      emp.phone || "",
+      emp.language || "",
+      emp.ninNumber || "",
+      emp.bvn || "",
+      emp.department,
+      emp.jobTitle,
+      emp.grade || "",
+      emp.level || "",
+      emp.status,
+      emp.joinDate,
+      String(emp.salary ?? ""),
+      emp.dateOfBirth || "",
+      emp.gender || "",
+      emp.address || "",
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) =>
+        row
+          .map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`)
+          .join(",")
+      )
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "staff-data.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -76,17 +222,80 @@ const Employees = () => {
           <h1 className="text-2xl font-bold tracking-tight">Employees</h1>
           <p className="text-muted-foreground">Manage your team members</p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="h-4 w-4 mr-2" />Add Employee</Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Add New Employee</DialogTitle>
-            </DialogHeader>
-            <EmployeeForm onSubmit={handleAdd} onCancel={() => setIsAddDialogOpen(false)} />
-          </DialogContent>
-        </Dialog>
+        <div className="flex items-center gap-2">
+          <Dialog open={isBulkDialogOpen} onOpenChange={setIsBulkDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Upload className="h-4 w-4 mr-2" />
+                Bulk Upload Staff
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Bulk Upload Employees</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Allowed formats: .xlsx, .xls, .csv, .pdf, .docx, .doc
+                </p>
+                <div className="rounded-md border p-3 space-y-2 text-xs text-muted-foreground">
+                  <p className="font-medium text-foreground">Before upload, ensure:</p>
+                  <p>- Required columns: Name, Email, Department, Job Title, Status, Join Date, Salary</p>
+                  <p>- Status must be: Active, On Leave, or Inactive</p>
+                  <p>- Join Date format: YYYY-MM-DD (example: 2026-03-01)</p>
+                  <p>- Salary must be a positive number (no commas or symbols)</p>
+                  <p>- Email, NIN Number, and BVN should be unique (no duplicates)</p>
+                  <p>- Header row should match template labels for best results</p>
+                </div>
+                <div className="flex justify-start">
+                  <Button type="button" variant="outline" onClick={handleDownloadUploadTemplate}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Upload Template
+                  </Button>
+                </div>
+                <Input
+                  type="file"
+                  accept=".xlsx,.xls,.csv,.pdf,.docx,.doc"
+                  onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
+                />
+                {uploadErrors.length > 0 && (
+                  <div className="border rounded-md p-3 space-y-2 max-h-60 overflow-y-auto">
+                    <p className="text-sm font-medium">Validation Issues</p>
+                    {uploadErrors.map((err, idx) => (
+                      <p key={`${err.row}-${err.field}-${idx}`} className="text-xs text-destructive">
+                        Row {err.row} - {err.field}: {err.message}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setIsBulkDialogOpen(false)} disabled={isUploading}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleBulkUpload} disabled={isUploading}>
+                    {isUploading ? "Uploading..." : "Upload and Process"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+          <Button variant="outline" onClick={handleDownloadStaffData}>
+            <Download className="h-4 w-4 mr-2" />
+            Download Staff Data
+          </Button>
+
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button><Plus className="h-4 w-4 mr-2" />Add Employee</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add New Employee</DialogTitle>
+              </DialogHeader>
+              <EmployeeForm onSubmit={handleAdd} onCancel={() => setIsAddDialogOpen(false)} />
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card className="shadow-sm">

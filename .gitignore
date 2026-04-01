@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# Local bulk-import test fixtures (generated during dev)
+backend/test-import-files/

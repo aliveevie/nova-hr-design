@@ -1,6 +1,7 @@
 import { getDatabase, dbHelpers } from "../config/database.js";
 import { randomUUID } from "crypto";
 import { hashPassword } from "../utils/password.util.js";
+import { employeeSchema } from "../utils/validators.js";
 
 export const getAllEmployees = async (filters?: {
   department?: string;
@@ -169,4 +170,104 @@ export const getEmployeeDocuments = async (employeeId: string) => {
   return db.data.employeeDocuments
     .filter((d) => d.employee_id === employeeId)
     .sort((a, b) => new Date(b.uploaded_date).getTime() - new Date(a.uploaded_date).getTime());
+};
+
+export const bulkCreateEmployees = async (rows: Record<string, unknown>[]) => {
+  await dbHelpers.read();
+  const db = getDatabase();
+
+  const errors: Array<{ row: number; field: string; message: string; rawValue?: unknown }> = [];
+  const validRows: any[] = [];
+
+  const existingEmails = new Set(
+    [...db.data.employees.map((e) => String(e.email || "").toLowerCase()), ...db.data.users.map((u) => String(u.email || "").toLowerCase())]
+      .filter(Boolean)
+  );
+  const existingNins = new Set(db.data.employees.map((e) => String(e.nin_number || "")).filter(Boolean));
+  const existingBvns = new Set(db.data.employees.map((e) => String(e.bvn || "")).filter(Boolean));
+
+  const seenEmails = new Set<string>();
+  const seenNins = new Set<string>();
+  const seenBvns = new Set<string>();
+
+  rows.forEach((rawRow, index) => {
+    const rowNumber = index + 2;
+    const row = rawRow as any;
+    const candidate = {
+      name: row.name,
+      email: row.email,
+      phone: row.phone || undefined,
+      language: row.language || undefined,
+      ninNumber: row.ninNumber || undefined,
+      bvn: row.bvn || undefined,
+      dateOfBirth: row.dateOfBirth || undefined,
+      gender: row.gender || undefined,
+      address: row.address || undefined,
+      department: row.department,
+      jobTitle: row.jobTitle,
+      grade: row.grade || undefined,
+      level: row.level || undefined,
+      status: row.status,
+      joinDate: row.joinDate,
+      salary: row.salary,
+    };
+
+    const validation = employeeSchema.safeParse(candidate);
+    if (!validation.success) {
+      validation.error.errors.forEach((err) => {
+        errors.push({
+          row: rowNumber,
+          field: err.path.join(".") || "row",
+          message: err.message,
+          rawValue: err.path.length ? row[err.path[0] as string] : row,
+        });
+      });
+      return;
+    }
+
+    const normalizedEmail = String(candidate.email).toLowerCase().trim();
+    if (existingEmails.has(normalizedEmail)) {
+      errors.push({ row: rowNumber, field: "email", message: "Email already exists", rawValue: candidate.email });
+    }
+    if (seenEmails.has(normalizedEmail)) {
+      errors.push({ row: rowNumber, field: "email", message: "Duplicate email in uploaded file", rawValue: candidate.email });
+    }
+    seenEmails.add(normalizedEmail);
+
+    if (candidate.ninNumber) {
+      const nin = String(candidate.ninNumber).trim();
+      if (existingNins.has(nin)) {
+        errors.push({ row: rowNumber, field: "ninNumber", message: "NIN already exists", rawValue: candidate.ninNumber });
+      }
+      if (seenNins.has(nin)) {
+        errors.push({ row: rowNumber, field: "ninNumber", message: "Duplicate NIN in uploaded file", rawValue: candidate.ninNumber });
+      }
+      seenNins.add(nin);
+    }
+
+    if (candidate.bvn) {
+      const bvn = String(candidate.bvn).trim();
+      if (existingBvns.has(bvn)) {
+        errors.push({ row: rowNumber, field: "bvn", message: "BVN already exists", rawValue: candidate.bvn });
+      }
+      if (seenBvns.has(bvn)) {
+        errors.push({ row: rowNumber, field: "bvn", message: "Duplicate BVN in uploaded file", rawValue: candidate.bvn });
+      }
+      seenBvns.add(bvn);
+    }
+
+    validRows.push(validation.data);
+  });
+
+  if (errors.length > 0) {
+    return { success: false as const, errors, createdEmployees: [] };
+  }
+
+  const createdEmployees = [];
+  for (const row of validRows) {
+    const employee = await createEmployee(row);
+    createdEmployees.push(employee);
+  }
+
+  return { success: true as const, errors: [], createdEmployees };
 };

@@ -21,9 +21,13 @@ class ApiClient {
     const url = `${this.baseURL}${endpoint}`;
 
     const headers: HeadersInit = {
-      "Content-Type": "application/json",
       ...options.headers,
     };
+
+    const isFormData = options.body instanceof FormData;
+    if (!isFormData && !headers["Content-Type"]) {
+      headers["Content-Type"] = "application/json";
+    }
 
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
@@ -36,7 +40,13 @@ class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: "Unknown error" }));
-      throw new Error(error.error || `HTTP error! status: ${response.status}`);
+      const apiError = new Error(error.error || `HTTP error! status: ${response.status}`) as Error & {
+        details?: unknown;
+        status?: number;
+      };
+      apiError.details = error;
+      apiError.status = response.status;
+      throw apiError;
     }
 
     return response.json();
@@ -50,6 +60,13 @@ class ApiClient {
     return this.request<T>(endpoint, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  async postForm<T>(endpoint: string, formData: FormData): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: "POST",
+      body: formData,
     });
   }
 

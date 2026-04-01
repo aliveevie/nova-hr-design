@@ -7,10 +7,12 @@ import {
   updateEmployee,
   deleteEmployee,
   getEmployeeDocuments,
+  bulkCreateEmployees,
 } from "../services/employee.service.js";
 import { employeeSchema } from "../utils/validators.js";
 import { sendEmployeeWelcomeWithLogin } from "../services/email.service.js";
 import { env } from "../config/env.js";
+import { isAllowedImportFile, isAllowedImportMimeType, parseEmployeeImportFile } from "../services/employee-import.service.js";
 
 export const getEmployeesController = async (req: AuthRequest, res: Response) => {
   try {
@@ -253,6 +255,99 @@ export const deleteEmployeeController = async (req: AuthRequest, res: Response) 
     res.json({ message: "Employee deactivated successfully" });
   } catch (error) {
     console.error("Delete employee error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const bulkUploadEmployeesController = async (req: AuthRequest, res: Response) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    if (!isAllowedImportFile(file.originalname)) {
+      return res.status(400).json({
+        error: "Invalid file format. Allowed formats: .xlsx, .xls, .csv, .pdf, .docx, .doc",
+      });
+    }
+    if (!isAllowedImportMimeType(file.mimetype)) {
+      return res.status(400).json({
+        error: "Invalid file type. Upload only valid Excel, PDF, or Word files.",
+      });
+    }
+
+    let parsedRows: Record<string, unknown>[] = [];
+    try {
+      parsedRows = await parseEmployeeImportFile(file);
+    } catch (parseError: any) {
+      return res.status(400).json({ error: parseError.message || "Unable to parse uploaded file" });
+    }
+    if (!parsedRows.length) {
+      return res.status(400).json({
+        error: "No valid staff rows found in file. Ensure header row and tabular content are present.",
+      });
+    }
+
+    const result = await bulkCreateEmployees(parsedRows);
+    if (!result.success) {
+      return res.status(400).json({
+        error: "Bulk upload failed validation. No employees were created.",
+        errors: result.errors,
+      });
+    }
+
+    const loginUrl = `${env.FRONTEND_URL}/login`;
+    result.createdEmployees.forEach((employee) => {
+      sendEmployeeWelcomeWithLogin(
+        employee.email,
+        employee.name,
+        employee.job_title,
+        employee.department,
+        employee.tempPassword,
+        loginUrl
+      )
+        .then((emailResult) => {
+          if (emailResult.success) {
+            console.log(`✅ Welcome email sent to ${employee.email}`);
+          } else {
+            console.error(`❌ Failed to send welcome email to ${employee.email}`);
+          }
+        })
+        .catch((err) => {
+          console.error(`❌ Error sending welcome email to ${employee.email}:`, err);
+        });
+    });
+
+    const transformed = result.createdEmployees.map((employee) => ({
+      id: employee.id,
+      name: employee.name,
+      email: employee.email,
+      phone: employee.phone,
+      language: employee.language,
+      ninNumber: employee.nin_number,
+      bvn: employee.bvn,
+      dateOfBirth: employee.date_of_birth,
+      gender: employee.gender,
+      address: employee.address,
+      department: employee.department,
+      jobTitle: employee.job_title,
+      grade: employee.grade,
+      level: employee.level,
+      status: employee.status,
+      joinDate: employee.join_date,
+      salary: employee.salary,
+      initials: employee.initials,
+      tempPassword: employee.tempPassword,
+    }));
+
+    res.status(201).json({
+      message: `${transformed.length} employees uploaded successfully`,
+      count: transformed.length,
+      employees: transformed,
+    });
+  } catch (error) {
+    console.error("Bulk upload employees error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
