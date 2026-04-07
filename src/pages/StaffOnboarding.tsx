@@ -149,7 +149,8 @@ const StaffOnboarding = () => {
       <div className="max-w-4xl mx-auto px-4 py-10">
         <p className="text-sm text-zinc-400 mb-8 max-w-2xl">
           Enter your details exactly as they should appear on your HR record. When you submit, we will create
-          your account and email login instructions to the address you provide.
+          your account and email login instructions to the address you provide. Use your
+          {" "}@galaxyitt.com.ng email address.
         </p>
 
         <div className="relative rounded-2xl border border-zinc-200/90 bg-white p-6 md:p-8 shadow-xl text-zinc-900">
@@ -182,6 +183,7 @@ const StaffOnboarding = () => {
               setServerIssues([]);
               setFocusFieldId(undefined);
             }}
+            emailDomain="galaxyitt.com.ng"
             showCancel={false}
             submitLabel="Submit profile"
           />

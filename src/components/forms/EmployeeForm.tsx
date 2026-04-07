@@ -16,6 +16,8 @@ interface EmployeeFormProps {
   prefillDefaults?: Partial<Omit<Employee, "id" | "initials">>;
   /** Called when the user focuses a field (not submit) — e.g. clear server-side validation banner */
   onDismissServerErrors?: () => void;
+  /** Optional strict email domain, e.g. `galaxyitt.com.ng` */
+  emailDomain?: string;
   showCancel?: boolean;
   submitLabel?: string;
   /**
@@ -33,6 +35,7 @@ export const EmployeeForm = ({
   onCancel,
   prefillDefaults,
   onDismissServerErrors,
+  emailDomain,
   showCancel = true,
   submitLabel,
   scrollMode = "modal",
@@ -133,7 +136,26 @@ export const EmployeeForm = ({
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email *</Label>
-            <Input id="email" type="email" {...register("email", { required: true })} />
+            <Input
+              id="email"
+              type="email"
+              {...register("email", {
+                required: "Email is required",
+                validate: (v) => {
+                  if (!emailDomain) return true;
+                  return (
+                    String(v || "")
+                      .trim()
+                      .toLowerCase()
+                      .endsWith(`@${emailDomain.toLowerCase()}`) ||
+                    `Use your @${emailDomain} work email`
+                  );
+                },
+              })}
+            />
+            {errors.email ? (
+              <p className="text-sm text-destructive">{errors.email.message}</p>
+            ) : null}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
