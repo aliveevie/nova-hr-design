@@ -5,6 +5,8 @@ import { createEmployee } from "./employee.service.js";
 import { employeeSchema } from "../utils/validators.js";
 import { normalizeInviteEmployeeBody } from "../utils/invite-employee-payload.util.js";
 
+const ONBOARDING_EMAIL_DOMAIN = "galaxyitt.com.ng";
+
 const hashToken = (raw: string) =>
   createHash("sha256").update(raw, "utf8").digest("hex");
 
@@ -132,6 +134,19 @@ export const submitStaffInvite = async (rawToken: string, body: unknown) => {
   const validation = employeeSchema.safeParse(normalized);
   if (!validation.success) {
     return { success: false as const, errors: validation.error.errors };
+  }
+  const email = String(validation.data.email || "").trim().toLowerCase();
+  if (!email.endsWith(`@${ONBOARDING_EMAIL_DOMAIN}`)) {
+    return {
+      success: false as const,
+      errors: [
+        {
+          code: "custom",
+          path: ["email"],
+          message: `Use your @${ONBOARDING_EMAIL_DOMAIN} work email`,
+        },
+      ],
+    };
   }
 
   const checked = await validateStaffInviteToken(rawToken);

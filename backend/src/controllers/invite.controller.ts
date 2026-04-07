@@ -106,10 +106,16 @@ export const submitPublicInviteController = async (req: Request, res: Response) 
     }
 
     const emp = result.employee as any;
-    const emailResult = await sendWelcomeEmailForNewEmployeeRow(emp, emp.tempPassword);
-    if (!emailResult.success) {
-      console.error(`Welcome email failed for invite onboarding: ${emp.email}`);
-    }
+    // Respond immediately; deliver welcome email in background to reduce onboarding latency.
+    sendWelcomeEmailForNewEmployeeRow(emp, emp.tempPassword)
+      .then((emailResult) => {
+        if (!emailResult.success) {
+          console.error(`Welcome email failed for invite onboarding: ${emp.email}`);
+        }
+      })
+      .catch((err) => {
+        console.error(`Welcome email error for invite onboarding ${emp.email}:`, err);
+      });
 
     res.status(201).json({
       success: true,
