@@ -10,6 +10,7 @@ import { payrollSchema } from "../utils/validators.js";
 import { sendPayrollEmail } from "../services/email.service.js";
 import { getDatabase, dbHelpers } from "../config/database.js";
 import { getHrAdminAllowedEmployeeIds } from "../utils/hr-admin-scope.util.js";
+import { canUserAccessEmployee } from "../utils/ownership-access.util.js";
 
 export const getPayrollsController = async (req: AuthRequest, res: Response) => {
   try {
@@ -63,6 +64,10 @@ export const getPayrollController = async (req: AuthRequest, res: Response) => {
     if (!payroll) {
       return res.status(404).json({ error: "Payroll not found" });
     }
+    const allowed = await canUserAccessEmployee(req, String((payroll as any).employee_id));
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
 
     const transformed = {
       id: payroll.id,
@@ -100,6 +105,10 @@ export const createPayrollController = async (req: AuthRequest, res: Response) =
     const validation = payrollSchema.safeParse(req.body);
     if (!validation.success) {
       return res.status(400).json({ error: "Invalid data", details: validation.error.errors });
+    }
+    const allowed = await canUserAccessEmployee(req, validation.data.employeeId);
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     const payroll = await createPayroll(validation.data);
@@ -170,6 +179,10 @@ export const updatePayrollController = async (req: AuthRequest, res: Response) =
     const existing = await getPayrollById(id);
     if (!existing) {
       return res.status(404).json({ error: "Payroll not found" });
+    }
+    const allowed = await canUserAccessEmployee(req, String((existing as any).employee_id));
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     const payroll = await updatePayroll(id, { status });

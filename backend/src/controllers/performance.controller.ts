@@ -10,6 +10,7 @@ import { performanceSchema } from "../utils/validators.js";
 import { sendPerformanceReviewEmail } from "../services/email.service.js";
 import { getDatabase, dbHelpers } from "../config/database.js";
 import { getHrAdminAllowedEmployeeIds } from "../utils/hr-admin-scope.util.js";
+import { canUserAccessEmployee } from "../utils/ownership-access.util.js";
 
 export const getPerformancesController = async (req: AuthRequest, res: Response) => {
   try {
@@ -66,6 +67,10 @@ export const getPerformanceController = async (req: AuthRequest, res: Response) 
     if (!performance) {
       return res.status(404).json({ error: "Performance not found" });
     }
+    const allowed = await canUserAccessEmployee(req, String((performance as any).employee_id));
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
 
     const latest = performance;
     const transformed = {
@@ -107,6 +112,10 @@ export const createPerformanceController = async (req: AuthRequest, res: Respons
     const validation = performanceSchema.safeParse(req.body);
     if (!validation.success) {
       return res.status(400).json({ error: "Invalid data", details: validation.error.errors });
+    }
+    const allowed = await canUserAccessEmployee(req, validation.data.employeeId);
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     const performance = await createPerformance(validation.data);
@@ -166,6 +175,10 @@ export const updatePerformanceController = async (req: AuthRequest, res: Respons
     const existing = await getPerformanceById(id);
     if (!existing) {
       return res.status(404).json({ error: "Performance not found" });
+    }
+    const allowed = await canUserAccessEmployee(req, String((existing as any).employee_id));
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     const performance = await updatePerformance(id, { ...existing, ...validation.data });

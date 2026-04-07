@@ -11,6 +11,7 @@ import { disciplineSchema } from "../utils/validators.js";
 import { sendDisciplineEmail } from "../services/email.service.js";
 import { getDatabase, dbHelpers } from "../config/database.js";
 import { getHrAdminAllowedEmployeeIds } from "../utils/hr-admin-scope.util.js";
+import { canUserAccessEmployee } from "../utils/ownership-access.util.js";
 
 export const getDisciplinesController = async (req: AuthRequest, res: Response) => {
   try {
@@ -50,6 +51,10 @@ export const getDisciplineController = async (req: AuthRequest, res: Response) =
     if (!discipline) {
       return res.status(404).json({ error: "Discipline not found" });
     }
+    const allowed = await canUserAccessEmployee(req, String((discipline as any).employee_id));
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
 
     const transformed = {
       id: discipline.id,
@@ -73,6 +78,10 @@ export const createDisciplineController = async (req: AuthRequest, res: Response
     const validation = disciplineSchema.safeParse(req.body);
     if (!validation.success) {
       return res.status(400).json({ error: "Invalid data", details: validation.error.errors });
+    }
+    const allowed = await canUserAccessEmployee(req, validation.data.employeeId);
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     const discipline = await createDiscipline(validation.data);
@@ -130,6 +139,10 @@ export const updateDisciplineController = async (req: AuthRequest, res: Response
     if (!existing) {
       return res.status(404).json({ error: "Discipline not found" });
     }
+    const allowed = await canUserAccessEmployee(req, String((existing as any).employee_id));
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
 
     const discipline = await updateDiscipline(id, { ...existing, ...validation.data });
 
@@ -156,6 +169,10 @@ export const deleteDisciplineController = async (req: AuthRequest, res: Response
     const discipline = await getDisciplineById(id);
     if (!discipline) {
       return res.status(404).json({ error: "Discipline not found" });
+    }
+    const allowed = await canUserAccessEmployee(req, String((discipline as any).employee_id));
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     await deleteDiscipline(id);

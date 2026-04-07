@@ -10,6 +10,7 @@ import {
 } from "../services/attendance.service.js";
 import { attendanceSchema } from "../utils/validators.js";
 import { getHrAdminAllowedEmployeeIds } from "../utils/hr-admin-scope.util.js";
+import { canUserAccessEmployee } from "../utils/ownership-access.util.js";
 
 export const getAttendanceController = async (req: AuthRequest, res: Response) => {
   try {
@@ -45,6 +46,10 @@ export const getAttendanceController = async (req: AuthRequest, res: Response) =
 export const getEmployeeAttendanceController = async (req: AuthRequest, res: Response) => {
   try {
     const { employeeId } = req.params;
+    const allowed = await canUserAccessEmployee(req, employeeId);
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
     const records = await getAttendanceByEmployee(employeeId);
     const transformed = records.map((r: any) => ({
       id: r.id,
@@ -67,6 +72,10 @@ export const getEmployeeAttendanceController = async (req: AuthRequest, res: Res
 export const checkInController = async (req: AuthRequest, res: Response) => {
   try {
     const { employeeId } = req.body;
+    const allowed = await canUserAccessEmployee(req, employeeId);
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
     const today = new Date().toISOString().split("T")[0];
     const now = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" });
 
@@ -97,6 +106,10 @@ export const checkInController = async (req: AuthRequest, res: Response) => {
 export const checkOutController = async (req: AuthRequest, res: Response) => {
   try {
     const { employeeId } = req.body;
+    const allowed = await canUserAccessEmployee(req, employeeId);
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
     const today = new Date().toISOString().split("T")[0];
     const now = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" });
 
@@ -125,6 +138,16 @@ export const updateAttendanceController = async (req: AuthRequest, res: Response
     const validation = attendanceSchema.partial().safeParse(req.body);
     if (!validation.success) {
       return res.status(400).json({ error: "Invalid data", details: validation.error.errors });
+    }
+
+    const existing = await getAttendanceRecords();
+    const current = existing.find((r: any) => r.id === id);
+    if (!current) {
+      return res.status(404).json({ error: "Attendance not found" });
+    }
+    const allowed = await canUserAccessEmployee(req, String((current as any).employee_id));
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     const updated = await updateAttendance(id, validation.data);

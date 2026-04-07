@@ -11,6 +11,7 @@ import { trainingSchema } from "../utils/validators.js";
 import { sendTrainingReminderEmail } from "../services/email.service.js";
 import { getDatabase, dbHelpers } from "../config/database.js";
 import { getHrAdminAllowedEmployeeIds } from "../utils/hr-admin-scope.util.js";
+import { canUserAccessEmployee } from "../utils/ownership-access.util.js";
 
 export const getTrainingsController = async (req: AuthRequest, res: Response) => {
   try {
@@ -48,6 +49,10 @@ export const getTrainingController = async (req: AuthRequest, res: Response) => 
     if (!training) {
       return res.status(404).json({ error: "Training not found" });
     }
+    const allowed = await canUserAccessEmployee(req, String((training as any).employee_id));
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
 
     const transformed = {
       id: training.id,
@@ -71,6 +76,10 @@ export const createTrainingController = async (req: AuthRequest, res: Response) 
     const validation = trainingSchema.safeParse(req.body);
     if (!validation.success) {
       return res.status(400).json({ error: "Invalid data", details: validation.error.errors });
+    }
+    const allowed = await canUserAccessEmployee(req, validation.data.employeeId);
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     const training = await createTraining(validation.data);
@@ -130,6 +139,10 @@ export const updateTrainingController = async (req: AuthRequest, res: Response) 
     if (!existing) {
       return res.status(404).json({ error: "Training not found" });
     }
+    const allowed = await canUserAccessEmployee(req, String((existing as any).employee_id));
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
 
     const training = await updateTraining(id, { ...existing, ...validation.data });
 
@@ -156,6 +169,10 @@ export const deleteTrainingController = async (req: AuthRequest, res: Response) 
     const training = await getTrainingById(id);
     if (!training) {
       return res.status(404).json({ error: "Training not found" });
+    }
+    const allowed = await canUserAccessEmployee(req, String((training as any).employee_id));
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     await deleteTraining(id);
