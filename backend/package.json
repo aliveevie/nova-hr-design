@@ -11,7 +11,9 @@
     "migrate": "tsx scripts/apply-schema.ts",
     "test:aiven": "tsx scripts/test-aiven.ts",
     "vercel-build": "npm run build",
-    "reset:local-db": "tsx scripts/reset-local-db.ts"
+    "reset:local-db": "tsx scripts/reset-local-db.ts",
+    "verify:invite-submit": "tsx scripts/verify-invite-submit-validation.ts",
+    "migrate:leave-requests": "tsx scripts/apply-leave-requests-migration.ts"
   },
   "keywords": [],
   "author": "",

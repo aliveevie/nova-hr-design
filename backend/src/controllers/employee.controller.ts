@@ -8,10 +8,11 @@ import {
   deleteEmployee,
   getEmployeeDocuments,
   bulkCreateEmployees,
+  resolveAdminOwnerForCreate,
+  hrAdminOwnsEmployee,
 } from "../services/employee.service.js";
 import { employeeSchema } from "../utils/validators.js";
-import { sendEmployeeWelcomeWithLogin } from "../services/email.service.js";
-import { env } from "../config/env.js";
+import { sendWelcomeEmailForNewEmployeeRow } from "../services/email.service.js";
 import { isAllowedImportFile, isAllowedImportMimeType, parseEmployeeImportFile } from "../services/employee-import.service.js";
 
 export const getEmployeesController = async (req: AuthRequest, res: Response) => {
@@ -21,7 +22,11 @@ export const getEmployeesController = async (req: AuthRequest, res: Response) =>
     if (department) filters.department = department as string;
     if (status) filters.status = status as string;
 
-    const employees = await getAllEmployees(filters);
+    const scope =
+      req.user?.role === "HR Admin"
+        ? { hrAdminUserId: req.user.userId }
+        : undefined;
+    const employees = await getAllEmployees(filters, scope);
     res.json({ employees });
   } catch (error) {
     console.error("Get employees error:", error);
@@ -42,6 +47,13 @@ export const getEmployeeController = async (req: AuthRequest, res: Response) => 
 
     if (!employee) {
       return res.status(404).json({ error: "Employee not found" });
+    }
+
+    if (req.user?.role === "HR Admin") {
+      const ok = await hrAdminOwnsEmployee(id, req.user.userId);
+      if (!ok) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
     }
 
     // Get documents
@@ -102,17 +114,16 @@ export const createEmployeeController = async (req: AuthRequest, res: Response) 
       return res.status(400).json({ error: "Invalid data", details: validation.error.errors });
     }
 
-    const employee: any = await createEmployee(validation.data);
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const adminOwnerId = await resolveAdminOwnerForCreate(
+      req.user.role,
+      req.user.userId
+    );
+    const employee: any = await createEmployee(validation.data, {
+      adminOwnerId,
+    });
 
-    const loginUrl = `${env.FRONTEND_URL}/login`;
-    sendEmployeeWelcomeWithLogin(
-      employee.email,
-      employee.name,
-      employee.job_title,
-      employee.department,
-      employee.tempPassword,
-      loginUrl
-    )
+    sendWelcomeEmailForNewEmployeeRow(employee, employee.tempPassword)
       .then((result) => {
         if (result.success) {
           console.log(`✅ Welcome email sent to ${employee.email}`);
@@ -185,6 +196,13 @@ export const updateEmployeeController = async (req: AuthRequest, res: Response) 
       return res.status(404).json({ error: "Employee not found" });
     }
 
+    if (req.user?.role === "HR Admin") {
+      const ok = await hrAdminOwnsEmployee(id, req.user.userId);
+      if (!ok) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+    }
+
     // Employees can only update next of kin, not other fields
     let updatedData;
     if (req.user?.role === "Employee") {
@@ -250,6 +268,13 @@ export const deleteEmployeeController = async (req: AuthRequest, res: Response) 
       return res.status(404).json({ error: "Employee not found" });
     }
 
+    if (req.user?.role === "HR Admin") {
+      const ok = await hrAdminOwnsEmployee(id, req.user.userId);
+      if (!ok) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+    }
+
     await deleteEmployee(id);
     res.json({ message: "Employee deactivated successfully" });
   } catch (error) {
@@ -288,7 +313,12 @@ export const bulkUploadEmployeesController = async (req: AuthRequest, res: Respo
       });
     }
 
-    const result = await bulkCreateEmployees(parsedRows);
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const adminOwnerId = await resolveAdminOwnerForCreate(
+      req.user.role,
+      req.user.userId
+    );
+    const result = await bulkCreateEmployees(parsedRows, adminOwnerId);
     if (!result.success) {
       return res.status(400).json({
         error: "Bulk upload failed validation. No employees were created.",
@@ -296,16 +326,8 @@ export const bulkUploadEmployeesController = async (req: AuthRequest, res: Respo
       });
     }
 
-    const loginUrl = `${env.FRONTEND_URL}/login`;
     result.createdEmployees.forEach((employee: any) => {
-      sendEmployeeWelcomeWithLogin(
-        employee.email,
-        employee.name,
-        employee.job_title,
-        employee.department,
-        employee.tempPassword,
-        loginUrl
-      )
+      sendWelcomeEmailForNewEmployeeRow(employee, employee.tempPassword)
         .then((emailResult) => {
           if (emailResult.success) {
             console.log(`✅ Welcome email sent to ${employee.email}`);

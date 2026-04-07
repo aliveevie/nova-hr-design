@@ -42,7 +42,7 @@ const EmployeeLayout = () => {
       {/* No sidebar for employees - they only see their portal */}
       <div className="flex flex-1 flex-col min-w-0">
         <AppHeader onMenuClick={() => {}} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-muted/30">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[radial-gradient(ellipse_at_top,_rgba(120,80,40,0.06),transparent_50%),linear-gradient(to_bottom,hsl(var(--background)),hsl(var(--muted)/0.35))]">
           <Outlet />
         </main>
       </div>

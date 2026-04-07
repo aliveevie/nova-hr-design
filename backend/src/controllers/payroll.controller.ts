@@ -9,6 +9,7 @@ import {
 import { payrollSchema } from "../utils/validators.js";
 import { sendPayrollEmail } from "../services/email.service.js";
 import { getDatabase, dbHelpers } from "../config/database.js";
+import { getHrAdminAllowedEmployeeIds } from "../utils/hr-admin-scope.util.js";
 
 export const getPayrollsController = async (req: AuthRequest, res: Response) => {
   try {
@@ -18,7 +19,12 @@ export const getPayrollsController = async (req: AuthRequest, res: Response) => 
     if (month) filters.month = month as string;
     if (year) filters.year = year as string;
 
-    const payrolls = await getPayrolls(filters);
+    let payrolls = await getPayrolls(filters);
+    const allowedIds = await getHrAdminAllowedEmployeeIds(req);
+    if (allowedIds) {
+      const set = new Set(allowedIds);
+      payrolls = payrolls.filter((p: any) => p.employee_id && set.has(p.employee_id));
+    }
     const transformed = payrolls.map((p: any) => ({
       id: p.id,
       employeeId: p.employee_id,

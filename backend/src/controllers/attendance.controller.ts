@@ -9,6 +9,7 @@ import {
   getMonthlySummary,
 } from "../services/attendance.service.js";
 import { attendanceSchema } from "../utils/validators.js";
+import { getHrAdminAllowedEmployeeIds } from "../utils/hr-admin-scope.util.js";
 
 export const getAttendanceController = async (req: AuthRequest, res: Response) => {
   try {
@@ -17,7 +18,12 @@ export const getAttendanceController = async (req: AuthRequest, res: Response) =
     if (employeeId) filters.employeeId = employeeId as string;
     if (date) filters.date = date as string;
 
-    const records = await getAttendanceRecords(filters);
+    let records = await getAttendanceRecords(filters);
+    const allowedIds = await getHrAdminAllowedEmployeeIds(req);
+    if (allowedIds) {
+      const set = new Set(allowedIds);
+      records = records.filter((r: any) => r.employee_id && set.has(r.employee_id));
+    }
     const transformed = records.map((r: any) => ({
       id: r.id,
       employeeId: r.employee_id,

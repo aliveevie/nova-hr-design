@@ -9,4 +9,6 @@ export * from "./performance.api.js";
 export * from "./training.api.js";
 export * from "./discipline.api.js";
 export * from "./holiday.api.js";
+export * from "./invite.api.js";
+export * from "./publicInvite.api.js";
 

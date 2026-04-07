@@ -1,6 +1,8 @@
-// Use .env.local for localhost, otherwise use production API URL
-// To use localhost, set VITE_API_URL=http://localhost:3001/api in .env.local
+// Single base for every API call (auth, employees, invites, public onboarding, etc.).
+// Same as Vite env used at build/runtime; login and all modules share this.
 const API_BASE_URL = import.meta.env.VITE_API_URL || "https://server-hr-nova.vercel.app/api";
+
+export const getApiBaseUrl = (): string => API_BASE_URL;
 
 class ApiClient {
   private baseURL: string;

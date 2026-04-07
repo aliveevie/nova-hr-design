@@ -131,6 +131,55 @@ create trigger set_leave_balances_updated_at
 before update on leave_balances
 for each row execute function set_updated_at();
 
+create table if not exists leave_requests (
+  id uuid primary key default gen_random_uuid(),
+  employee_id uuid not null references employees (id) on delete cascade,
+  employee_name text not null,
+  type text not null,
+  from_date text not null,
+  to_date text not null,
+  days numeric not null,
+  status text not null default 'Pending',
+  reason text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_leave_requests_employee_id on leave_requests (employee_id);
+create index if not exists idx_leave_requests_created_at on leave_requests (created_at desc);
+
+drop trigger if exists set_leave_requests_updated_at on leave_requests;
+create trigger set_leave_requests_updated_at
+before update on leave_requests
+for each row execute function set_updated_at();
+
+-- HR Admin ownership (per-admin dashboard) + staff onboarding invites
+alter table employees add column if not exists admin_owner_id uuid references users (id) on delete set null;
+alter table employees add column if not exists created_via_invite_id uuid;
+
+create table if not exists staff_invites (
+  id uuid primary key default gen_random_uuid(),
+  token_hash text not null unique,
+  admin_user_id uuid not null references users (id) on delete cascade,
+  label text,
+  expires_at timestamptz not null,
+  revoked_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_staff_invites_admin on staff_invites (admin_user_id);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'employees_created_via_invite_fk'
+  ) then
+    alter table employees
+      add constraint employees_created_via_invite_fk
+      foreign key (created_via_invite_id) references staff_invites (id) on delete set null;
+  end if;
+end $$;
+
 -- Seed default HR Admin for production database (Aiven)
 insert into users (name, email, password, role, initials, employee_id)
 values (
@@ -143,9 +192,39 @@ values (
 )
 on conflict (email) do nothing;
 
+-- Test HR Admin (staging / QA only): skip first-login email gate; do not change Mariya's row above.
+insert into users (
+  name,
+  email,
+  password,
+  role,
+  initials,
+  employee_id,
+  password_must_change,
+  first_login_verified
+)
+values (
+  'Test HR Admin',
+  'test.hr.admin@galaxyitt.com.ng',
+  '$2a$10$pIgOiNFSiJzN5F8w9jfA5epTHKmlb5nO/aPIWA84bpjLHh8u2t0DG',
+  'HR Admin',
+  'TA',
+  null,
+  false,
+  true
+)
+on conflict (email) do nothing;
+
 update users
 set
   password_must_change = true,
   first_login_verified = false,
   first_login_verified_at = null
 where email = 'mabubakar@galaxyitt.com.ng';
+
+-- Assign existing employees to primary HR Admin so legacy data stays under Mariya's scope (not test admin).
+update employees e
+set admin_owner_id = u.id
+from users u
+where u.email = 'mabubakar@galaxyitt.com.ng'
+  and e.admin_owner_id is null;

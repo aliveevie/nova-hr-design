@@ -10,6 +10,7 @@ import {
 import { trainingSchema } from "../utils/validators.js";
 import { sendTrainingReminderEmail } from "../services/email.service.js";
 import { getDatabase, dbHelpers } from "../config/database.js";
+import { getHrAdminAllowedEmployeeIds } from "../utils/hr-admin-scope.util.js";
 
 export const getTrainingsController = async (req: AuthRequest, res: Response) => {
   try {
@@ -17,7 +18,12 @@ export const getTrainingsController = async (req: AuthRequest, res: Response) =>
     const filters: any = {};
     if (employeeId) filters.employeeId = employeeId as string;
 
-    const trainings = await getTrainings(filters);
+    let trainings = await getTrainings(filters);
+    const allowedIds = await getHrAdminAllowedEmployeeIds(req);
+    if (allowedIds) {
+      const set = new Set(allowedIds);
+      trainings = trainings.filter((t: any) => t.employee_id && set.has(t.employee_id));
+    }
     const transformed = trainings.map((t: any) => ({
       id: t.id,
       employeeId: t.employee_id,

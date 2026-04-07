@@ -1,23 +1,49 @@
 import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { Employee } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 
 interface EmployeeFormProps {
   employee?: Employee;
   onSubmit: (data: Omit<Employee, "id" | "initials">) => void;
   onCancel: () => void;
+  /** When creating (no employee), optional defaults e.g. join date / status */
+  prefillDefaults?: Partial<Omit<Employee, "id" | "initials">>;
+  /** Called when the user focuses a field (not submit) — e.g. clear server-side validation banner */
+  onDismissServerErrors?: () => void;
+  showCancel?: boolean;
+  submitLabel?: string;
+  /**
+   * `modal` — max height + internal scroll (admin dialogs).
+   * `page` — full natural height (e.g. invite link) so nothing is clipped or “missing”.
+   */
+  scrollMode?: "modal" | "page";
 }
 
 const departments = ["Engineering", "Marketing", "Human Resources", "Finance", "Sales", "Design", "Operations"];
 
-export const EmployeeForm = ({ employee, onSubmit, onCancel }: EmployeeFormProps) => {
-  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<Omit<Employee, "id" | "initials">>({
+export const EmployeeForm = ({
+  employee,
+  onSubmit,
+  onCancel,
+  prefillDefaults,
+  onDismissServerErrors,
+  showCancel = true,
+  submitLabel,
+  scrollMode = "modal",
+}: EmployeeFormProps) => {
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    control,
+    formState: { errors },
+  } = useForm<Omit<Employee, "id" | "initials">>({
     defaultValues: employee ? {
       name: employee.name,
       email: employee.email,
@@ -36,7 +62,11 @@ export const EmployeeForm = ({ employee, onSubmit, onCancel }: EmployeeFormProps
       joinDate: employee.joinDate,
       salary: employee.salary,
       nextOfKin: employee.nextOfKin,
-    } : undefined,
+    } : {
+      status: "Active",
+      joinDate: new Date().toISOString().split("T")[0],
+      ...prefillDefaults,
+    },
   });
 
   const [nextOfKin, setNextOfKin] = useState(employee?.nextOfKin || {
@@ -67,16 +97,33 @@ export const EmployeeForm = ({ employee, onSubmit, onCancel }: EmployeeFormProps
     }
   }, [employee, setValue]);
 
-  const onFormSubmit = (data: any) => {
+  const onFormSubmit = (data: Omit<Employee, "id" | "initials">) => {
+    const salary =
+      typeof data.salary === "number" && Number.isFinite(data.salary) ? data.salary : undefined;
+    if (salary === undefined) return;
     onSubmit({
       ...data,
+      salary,
       nextOfKin: nextOfKin.name ? nextOfKin : undefined,
       documents: employee?.documents || [],
     });
   };
 
   return (
-    <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-6 max-h-[80vh] overflow-y-auto pr-2">
+    <form
+      onFocusCapture={(e) => {
+        if (!onDismissServerErrors) return;
+        const t = e.target as HTMLElement;
+        if (t.closest('button[type="submit"]')) return;
+        onDismissServerErrors();
+      }}
+      onSubmit={handleSubmit(onFormSubmit)}
+      className={cn(
+        "space-y-6",
+        scrollMode === "modal" && "max-h-[80vh] overflow-y-auto pr-2",
+        scrollMode === "page" && "pb-8"
+      )}
+    >
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Basic Information</h3>
         <div className="grid grid-cols-2 gap-4">
@@ -116,19 +163,27 @@ export const EmployeeForm = ({ employee, onSubmit, onCancel }: EmployeeFormProps
           </div>
           <div className="space-y-2">
             <Label htmlFor="gender">Gender</Label>
-            <Select
-              value={watch("gender") || ""}
-              onValueChange={(value) => setValue("gender", value as "Male" | "Female" | "Other")}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select gender" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Male">Male</SelectItem>
-                <SelectItem value="Female">Female</SelectItem>
-                <SelectItem value="Other">Other</SelectItem>
-              </SelectContent>
-            </Select>
+            <Controller
+              name="gender"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  value={field.value ?? ""}
+                  onValueChange={(value) =>
+                    field.onChange(value as "Male" | "Female" | "Other")
+                  }
+                >
+                  <SelectTrigger id="gender">
+                    <SelectValue placeholder="Select gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Male">Male</SelectItem>
+                    <SelectItem value="Female">Female</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="address">Address</Label>
@@ -144,19 +199,28 @@ export const EmployeeForm = ({ employee, onSubmit, onCancel }: EmployeeFormProps
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="department">Department *</Label>
-            <Select
-              value={watch("department") || ""}
-              onValueChange={(value) => setValue("department", value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select department" />
-              </SelectTrigger>
-              <SelectContent>
-                {departments.map((dept) => (
-                  <SelectItem key={dept} value={dept}>{dept}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Controller
+              name="department"
+              control={control}
+              rules={{ required: "Select a department" }}
+              render={({ field }) => (
+                <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                  <SelectTrigger id="department">
+                    <SelectValue placeholder="Select department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departments.map((dept) => (
+                      <SelectItem key={dept} value={dept}>
+                        {dept}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {errors.department ? (
+              <p className="text-sm text-destructive">{errors.department.message}</p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor="jobTitle">Job Title *</Label>
@@ -174,19 +238,31 @@ export const EmployeeForm = ({ employee, onSubmit, onCancel }: EmployeeFormProps
           </div>
           <div className="space-y-2">
             <Label htmlFor="status">Status *</Label>
-            <Select
-              value={watch("status") || ""}
-              onValueChange={(value) => setValue("status", value as "Active" | "On Leave" | "Inactive")}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Active">Active</SelectItem>
-                <SelectItem value="On Leave">On Leave</SelectItem>
-                <SelectItem value="Inactive">Inactive</SelectItem>
-              </SelectContent>
-            </Select>
+            <Controller
+              name="status"
+              control={control}
+              rules={{ required: "Select a status" }}
+              render={({ field }) => (
+                <Select
+                  value={field.value ?? ""}
+                  onValueChange={(value) =>
+                    field.onChange(value as "Active" | "On Leave" | "Inactive")
+                  }
+                >
+                  <SelectTrigger id="status">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="On Leave">On Leave</SelectItem>
+                    <SelectItem value="Inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {errors.status ? (
+              <p className="text-sm text-destructive">{errors.status.message}</p>
+            ) : null}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
@@ -196,7 +272,22 @@ export const EmployeeForm = ({ employee, onSubmit, onCancel }: EmployeeFormProps
           </div>
           <div className="space-y-2">
             <Label htmlFor="salary">Salary *</Label>
-            <Input id="salary" type="number" {...register("salary", { required: true, valueAsNumber: true })} />
+            <Input
+              id="salary"
+              type="number"
+              step="any"
+              min={0.01}
+              {...register("salary", {
+                required: "Salary is required",
+                valueAsNumber: true,
+                validate: (v) =>
+                  (typeof v === "number" && Number.isFinite(v) && v > 0) ||
+                  "Enter a valid salary greater than 0",
+              })}
+            />
+            {errors.salary ? (
+              <p className="text-sm text-destructive">{errors.salary.message}</p>
+            ) : null}
           </div>
         </div>
       </div>
@@ -244,8 +335,12 @@ export const EmployeeForm = ({ employee, onSubmit, onCancel }: EmployeeFormProps
       </div>
 
       <div className="flex justify-end gap-2 pt-4">
-        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
-        <Button type="submit">{employee ? "Update" : "Add"} Employee</Button>
+        {showCancel ? (
+          <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+        ) : null}
+        <Button type="submit">
+          {submitLabel ?? `${employee ? "Update" : "Add"} Employee`}
+        </Button>
       </div>
     </form>
   );

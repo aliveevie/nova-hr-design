@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/store";
+import { Link } from "react-router-dom";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +16,19 @@ import { employeeApi, leaveApi, payrollApi, performanceApi, trainingApi, discipl
 import { Employee, LeaveRequest, Payroll, Performance, Training, Discipline } from "@/types";
 import { calculateLeaveDays } from "@/lib/utils/leaveUtils";
 import { useHoliday } from "@/lib/store";
-import { Printer, Plus } from "lucide-react";
+import {
+  Printer,
+  Plus,
+  LayoutDashboard,
+  User,
+  CalendarDays,
+  Wallet,
+  LineChart,
+  GraduationCap,
+  AlertCircle,
+  KeyRound,
+  Lock,
+} from "lucide-react";
 import { format } from "date-fns";
 
 const statusClass: Record<string, string> = {
@@ -45,6 +58,9 @@ const EmployeePortal = () => {
   const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false);
   const [isNextOfKinDialogOpen, setIsNextOfKinDialogOpen] = useState(false);
   const [selectedPayroll, setSelectedPayroll] = useState<Payroll | null>(null);
+  const [activeSection, setActiveSection] = useState<
+    "overview" | "profile" | "leave" | "payroll" | "performance" | "training" | "queries" | "account"
+  >("overview");
 
   // Leave form state
   const [leaveType, setLeaveType] = useState<LeaveRequest["type"]>("Annual Leave");
@@ -285,37 +301,103 @@ const EmployeePortal = () => {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Employee Self-Service Portal</h1>
-        <p className="text-muted-foreground mt-1">
-          Welcome, {user.name}. Manage your personal information and view your HR records.
-        </p>
-      </div>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle>Your Portal</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            This is your personal employee portal. You can apply for leave, view your payroll, 
-            performance reviews, training records, and queries. You can also update your next of kin information.
-          </p>
-        </CardContent>
-      </Card>
-
-      <Tabs defaultValue="profile">
-        <TabsList>
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="leave">Leave</TabsTrigger>
-          <TabsTrigger value="payroll">Payroll</TabsTrigger>
-          <TabsTrigger value="performance">Performance</TabsTrigger>
-          <TabsTrigger value="training">Training</TabsTrigger>
-          <TabsTrigger value="queries">Queries</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="profile">
+    <div className="flex flex-col gap-6 lg:flex-row lg:gap-8 min-h-[calc(100vh-5rem)]">
+      <aside className="lg:w-56 shrink-0">
+        <div className="lg:sticky lg:top-4 space-y-4 rounded-2xl border border-border/60 bg-card/80 p-3 shadow-sm backdrop-blur-sm">
+          <div className="flex items-center gap-3 px-3 py-2">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 text-sm font-bold text-[#0c0f14]">
+              {user?.initials?.slice(0, 2) || "ME"}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Employee</p>
+              <p className="truncate font-medium">{user.name}</p>
+            </div>
+          </div>
+          <nav className="flex flex-row gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible">
+            {(
+              [
+                ["overview", "Overview", LayoutDashboard],
+                ["profile", "Profile", User],
+                ["leave", "Leave", CalendarDays],
+                ["payroll", "Payroll", Wallet],
+                ["performance", "Performance", LineChart],
+                ["training", "Training", GraduationCap],
+                ["queries", "Queries", AlertCircle],
+                ["account", "Account", KeyRound],
+              ] as const
+            ).map(([id, label, Icon]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveSection(id)}
+                className={cn(
+                  "flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                  activeSection === id
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                <span className="hidden sm:inline">{label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="hidden border-t border-border/60 pt-3 lg:block space-y-2 px-1">
+            <Link
+              to="/forgot-password"
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Lock className="h-3.5 w-3.5" /> Forgot password
+            </Link>
+            <Link
+              to="/change-password"
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <KeyRound className="h-3.5 w-3.5" /> Change password
+            </Link>
+          </div>
+        </div>
+      </aside>
+      <div className="min-w-0 flex-1 space-y-6">
+        {activeSection === "overview" && (
+          <div className="space-y-4">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+              <p className="text-muted-foreground mt-1">
+                Welcome back, {user.name}. Here is a snapshot of your HR activity.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Pending leave</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-3xl font-bold">{leaveRequests.filter((x) => x.status === "Pending").length}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Annual Leave left</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-3xl font-bold">{leaveBalance?.annualLeave ?? "—"}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Latest net pay</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-3xl font-bold">
+                    {payrolls[0] ? `₦${payrolls[0].netPay.toLocaleString()}` : "—"}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+        {activeSection === "profile" && (
           <Card>
             <CardHeader>
               <CardTitle>Profile &amp; Next of Kin</CardTitle>
@@ -413,9 +495,9 @@ const EmployeePortal = () => {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        )}
 
-        <TabsContent value="leave">
+        {activeSection === "leave" && (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -532,9 +614,9 @@ const EmployeePortal = () => {
               </Table>
             </CardContent>
           </Card>
-        </TabsContent>
+        )}
 
-        <TabsContent value="payroll">
+        {activeSection === "payroll" && (
           <Card>
             <CardHeader>
               <CardTitle>Payroll &amp; Payslips</CardTitle>
@@ -574,9 +656,9 @@ const EmployeePortal = () => {
               </Table>
             </CardContent>
           </Card>
-        </TabsContent>
+        )}
 
-        <TabsContent value="performance">
+        {activeSection === "performance" && (
           <Card>
             <CardHeader>
               <CardTitle>Performance &amp; Rewards</CardTitle>
@@ -620,9 +702,9 @@ const EmployeePortal = () => {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        )}
 
-        <TabsContent value="training">
+        {activeSection === "training" && (
           <Card>
             <CardHeader>
               <CardTitle>Training</CardTitle>
@@ -654,9 +736,9 @@ const EmployeePortal = () => {
               </Table>
             </CardContent>
           </Card>
-        </TabsContent>
+        )}
 
-        <TabsContent value="queries">
+        {activeSection === "queries" && (
           <Card>
             <CardHeader>
               <CardTitle>Queries &amp; Discipline</CardTitle>
@@ -688,8 +770,29 @@ const EmployeePortal = () => {
               </Table>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        )}
+
+        {activeSection === "account" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Account security</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Manage your password and recovery options.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button asChild variant="default">
+                  <Link to="/change-password">Change password</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to="/forgot-password">Forgot password</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
 };

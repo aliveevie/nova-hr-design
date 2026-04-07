@@ -12,6 +12,8 @@ import performanceRoutes from "./routes/performance.routes.js";
 import trainingRoutes from "./routes/training.routes.js";
 import disciplineRoutes from "./routes/discipline.routes.js";
 import holidayRoutes from "./routes/holiday.routes.js";
+import inviteRoutes from "./routes/invite.routes.js";
+import publicRoutes from "./routes/public.routes.js";
 
 const app = express();
 
@@ -44,6 +46,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/public", publicRoutes);
+app.use("/api/invites", inviteRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/applicants", recruitmentRoutes);
 app.use("/api/attendance", attendanceRoutes);

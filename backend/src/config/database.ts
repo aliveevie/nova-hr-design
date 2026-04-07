@@ -22,6 +22,7 @@ interface DatabaseData {
   disciplines: any[];
   holidays: any[];
   employeeDocuments: any[];
+  staffInvites: any[];
 }
 
 const defaultData: DatabaseData = {
@@ -37,6 +38,7 @@ const defaultData: DatabaseData = {
   disciplines: [],
   holidays: [],
   employeeDocuments: [],
+  staffInvites: [],
 };
 
 let db: Low<DatabaseData> | null = null;
@@ -104,6 +106,43 @@ const seedInitialData = async () => {
       updated_at: new Date().toISOString(),
     });
     console.log("Initial user seeded");
+  }
+
+  const testAdmin = db.data.users.find(
+    (u) => u.email === "test.hr.admin@galaxyitt.com.ng"
+  );
+  if (!testAdmin) {
+    const testHash = await bcrypt.hash("TestNovaHR#2026", 10);
+    db.data.users.push({
+      id: "a0000000-0000-4000-8000-000000000001",
+      name: "Test HR Admin",
+      email: "test.hr.admin@galaxyitt.com.ng",
+      password: testHash,
+      role: "HR Admin",
+      initials: "TA",
+      employeeId: null,
+      password_must_change: false,
+      first_login_verified: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    console.log("Test HR Admin user seeded");
+  }
+
+  const mariyaForScope = db.data.users.find(
+    (u) => u.email === "mabubakar@galaxyitt.com.ng"
+  );
+  if (mariyaForScope) {
+    let touched = false;
+    for (const e of db.data.employees) {
+      if (e.admin_owner_id == null) {
+        e.admin_owner_id = mariyaForScope.id;
+        touched = true;
+      }
+    }
+    if (touched) {
+      console.log("Backfilled admin_owner_id on employees (local DB)");
+    }
   }
 };
 

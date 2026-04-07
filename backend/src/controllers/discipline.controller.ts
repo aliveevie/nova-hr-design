@@ -10,6 +10,7 @@ import {
 import { disciplineSchema } from "../utils/validators.js";
 import { sendDisciplineEmail } from "../services/email.service.js";
 import { getDatabase, dbHelpers } from "../config/database.js";
+import { getHrAdminAllowedEmployeeIds } from "../utils/hr-admin-scope.util.js";
 
 export const getDisciplinesController = async (req: AuthRequest, res: Response) => {
   try {
@@ -17,7 +18,14 @@ export const getDisciplinesController = async (req: AuthRequest, res: Response) 
     const filters: any = {};
     if (employeeId) filters.employeeId = employeeId as string;
 
-    const disciplines = await getDisciplines(filters);
+    let disciplines = await getDisciplines(filters);
+    const allowedIds = await getHrAdminAllowedEmployeeIds(req);
+    if (allowedIds) {
+      const set = new Set(allowedIds);
+      disciplines = disciplines.filter(
+        (d: any) => d.employee_id && set.has(d.employee_id)
+      );
+    }
     const transformed = disciplines.map((d: any) => ({
       id: d.id,
       employeeId: d.employee_id,

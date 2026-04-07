@@ -9,6 +9,7 @@ import {
 import { performanceSchema } from "../utils/validators.js";
 import { sendPerformanceReviewEmail } from "../services/email.service.js";
 import { getDatabase, dbHelpers } from "../config/database.js";
+import { getHrAdminAllowedEmployeeIds } from "../utils/hr-admin-scope.util.js";
 
 export const getPerformancesController = async (req: AuthRequest, res: Response) => {
   try {
@@ -16,7 +17,14 @@ export const getPerformancesController = async (req: AuthRequest, res: Response)
     const filters: any = {};
     if (employeeId) filters.employeeId = employeeId as string;
 
-    const performances = await getPerformances(filters);
+    let performances = await getPerformances(filters);
+    const allowedIds = await getHrAdminAllowedEmployeeIds(req);
+    if (allowedIds) {
+      const set = new Set(allowedIds);
+      performances = performances.filter(
+        (p: any) => p.employee_id && set.has(p.employee_id)
+      );
+    }
     const transformed = performances.map((p: any) => ({
       id: p.id,
       employeeId: p.employee_id,

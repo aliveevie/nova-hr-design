@@ -16,13 +16,13 @@ export const employeeSchema = z.object({
   level: z.string().optional(),
   status: z.enum(["Active", "On Leave", "Inactive"]),
   joinDate: z.string().min(1),
-  salary: z.number().positive(),
+  salary: z.coerce.number().positive(),
   nextOfKin: z
     .object({
-      name: z.string(),
-      relationship: z.string(),
-      phone: z.string(),
-      address: z.string(),
+      name: z.string().optional(),
+      relationship: z.string().optional(),
+      phone: z.string().optional(),
+      address: z.string().optional(),
     })
     .optional(),
 });

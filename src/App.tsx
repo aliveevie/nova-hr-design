@@ -38,6 +38,7 @@ import Reports from "./pages/Reports";
 import Holidays from "./pages/Holidays";
 import Settings from "./pages/Settings";
 import EmployeePortal from "./pages/EmployeePortal";
+import StaffOnboarding from "./pages/StaffOnboarding";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -59,6 +60,7 @@ const App = () => (
                           <Sonner />
                           <BrowserRouter>
                             <Routes>
+                              <Route path="/staff-onboarding/:token" element={<StaffOnboarding />} />
                               <Route path="/login" element={<Login />} />
                               <Route path="/first-login-verify" element={<FirstLoginVerify />} />
                               <Route path="/forgot-password" element={<ForgotPassword />} />

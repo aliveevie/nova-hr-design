@@ -1,4 +1,5 @@
 import { createEmailTransporter, emailConfig } from "../config/email.js";
+import { env } from "../config/env.js";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -260,6 +261,28 @@ export const sendEmployeeWelcomeWithLogin = async (
   });
 };
 
+/** Same welcome email as admin “Add employee” / bulk upload — one code path for credentials. */
+export const sendWelcomeEmailForNewEmployeeRow = async (
+  employeeRow: {
+    email: string;
+    name: string;
+    department: string;
+    job_title?: string | null;
+    jobTitle?: string | null;
+  },
+  tempPassword: string
+) => {
+  const loginUrl = `${env.FRONTEND_URL.replace(/\/$/, "")}/login`;
+  const jobTitle = String(employeeRow.job_title ?? employeeRow.jobTitle ?? "");
+  return sendEmployeeWelcomeWithLogin(
+    employeeRow.email,
+    employeeRow.name,
+    jobTitle,
+    employeeRow.department,
+    tempPassword,
+    loginUrl
+  );
+};
 
 export const sendPasswordResetEmail = async (
   email: string,

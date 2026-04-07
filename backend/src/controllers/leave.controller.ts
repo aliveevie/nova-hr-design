@@ -10,13 +10,55 @@ import {
 import { leaveRequestSchema } from "../utils/validators.js";
 import { sendLeaveRequestEmail, sendLeaveApprovalEmail } from "../services/email.service.js";
 import { getDatabase, dbHelpers } from "../config/database.js";
+import {
+  getEmployeeById,
+  hrAdminOwnsEmployee,
+  resolveAdminOwnerForCreate,
+} from "../services/employee.service.js";
+import { getSql, isSupabaseEnabled } from "../config/supabase.js";
+
+const defaultHrLeaveEmail = () =>
+  process.env.HR_LEAVE_NOTIFY_EMAIL || "hr@galaxyitt.com.ng";
+
+async function resolveLeaveNotifyEmailForEmployee(employee: Record<string, unknown> | null): Promise<string> {
+  let notifyEmail = defaultHrLeaveEmail();
+  const ownerId = employee?.admin_owner_id as string | undefined;
+  if (!employee || !ownerId) return notifyEmail;
+
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    const rows = await sql`select email from users where id = ${ownerId} limit 1`;
+    if (rows[0]?.email) return String(rows[0].email);
+    return notifyEmail;
+  }
+
+  await dbHelpers.read();
+  const db = getDatabase();
+  const hr = db.data.users.find((u: { id?: string; email?: string }) => u.id === ownerId);
+  if (hr?.email) return String(hr.email);
+  return notifyEmail;
+}
 
 export const getLeaveRequestsController = async (req: AuthRequest, res: Response) => {
   try {
     const { employeeId, status } = req.query;
-    const filters: any = {};
+    const filters: {
+      employeeId?: string;
+      status?: string;
+      scopeAdminOwnerId?: string;
+    } = {};
     if (employeeId) filters.employeeId = employeeId as string;
     if (status) filters.status = status as string;
+
+    // Each HR Admin sees only their own employees' requests; Managers see the same scope as employee list (primary HR org)
+    if (req.user?.role === "HR Admin") {
+      filters.scopeAdminOwnerId = req.user.userId;
+    } else if (req.user?.role === "Manager") {
+      filters.scopeAdminOwnerId = await resolveAdminOwnerForCreate(
+        "Manager",
+        req.user.userId
+      );
+    }
 
     const requests = await getLeaveRequests(filters);
     const transformed = requests.map((r: any) => ({
@@ -66,17 +108,13 @@ export const createLeaveRequestController = async (req: AuthRequest, res: Respon
       days,
     });
 
-    // Send email to manager (get manager email from employee's department)
-    await dbHelpers.read();
-    const db = getDatabase();
-    const employee = db.data.employees.find((e: any) => e.id === validation.data.employeeId);
-
+    const employee = await getEmployeeById(validation.data.employeeId);
     if (employee) {
-      // Send notification to HR/Manager about new leave request
-      const hrEmail = "hr@galaxyitt.com.ng"; // In production, get manager email from department
+      const notifyEmail = await resolveLeaveNotifyEmailForEmployee(employee as Record<string, unknown>);
+      const name = (employee as { name?: string }).name || "Employee";
       sendLeaveRequestEmail(
-        hrEmail,
-        employee.name || "Employee",
+        notifyEmail,
+        name,
         validation.data.type,
         validation.data.from,
         validation.data.to,
@@ -85,9 +123,9 @@ export const createLeaveRequestController = async (req: AuthRequest, res: Respon
       )
         .then((result) => {
           if (result.success) {
-            console.log(`✅ Leave request notification sent to ${hrEmail} for ${employee.name}`);
+            console.log(`✅ Leave request notification sent to ${notifyEmail} for ${name}`);
           } else {
-            console.error(`❌ Failed to send leave request notification to ${hrEmail}`);
+            console.error(`❌ Failed to send leave request notification to ${notifyEmail}`);
           }
         })
         .catch((err) => {
@@ -128,32 +166,52 @@ export const updateLeaveRequestController = async (req: AuthRequest, res: Respon
       return res.status(404).json({ error: "Leave request not found" });
     }
 
-    const request = await updateLeaveRequest(id, { status });
+    const targetEmployeeId = String((existing as { employee_id: string }).employee_id);
 
-    // Send email to employee
-    await dbHelpers.read();
-    const db = getDatabase();
-    const employee = db.data.employees.find((e: any) => e.id === request.employee_id);
+    if (req.user?.role === "Employee") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    if (req.user?.role === "HR Admin") {
+      const ok = await hrAdminOwnsEmployee(targetEmployeeId, req.user.userId);
+      if (!ok) return res.status(403).json({ error: "Forbidden" });
+    } else if (req.user?.role === "Manager") {
+      const primary = await resolveAdminOwnerForCreate("Manager", req.user.userId);
+      const emp = await getEmployeeById(targetEmployeeId);
+      if (!emp || String((emp as { admin_owner_id?: string }).admin_owner_id) !== String(primary)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+    }
+
+    const request = await updateLeaveRequest(id, { status });
+    if (!request) {
+      return res.status(404).json({ error: "Leave request not found" });
+    }
+
+    const employee = await getEmployeeById(String((request as { employee_id: string }).employee_id));
 
     if (employee) {
-      sendLeaveApprovalEmail(
-        employee.email,
-        employee.name,
-        request.type,
-        request.from_date,
-        request.to_date,
-        status as "Approved" | "Rejected"
-      )
-        .then((result) => {
-          if (result.success) {
-            console.log(`✅ Leave ${status.toLowerCase()} email sent to ${employee.email}`);
-          } else {
-            console.error(`❌ Failed to send leave ${status.toLowerCase()} email to ${employee.email}`);
-          }
-        })
-        .catch((err) => {
-          console.error(`❌ Error sending leave ${status.toLowerCase()} email:`, err);
-        });
+      const email = (employee as { email?: string }).email;
+      const name = (employee as { name?: string }).name || "Employee";
+      if (email) {
+        sendLeaveApprovalEmail(
+          email,
+          name,
+          request.type,
+          request.from_date,
+          request.to_date,
+          status as "Approved" | "Rejected"
+        )
+          .then((result) => {
+            if (result.success) {
+              console.log(`✅ Leave ${status.toLowerCase()} email sent to ${email}`);
+            } else {
+              console.error(`❌ Failed to send leave ${status.toLowerCase()} email to ${email}`);
+            }
+          })
+          .catch((err) => {
+            console.error(`❌ Error sending leave ${status.toLowerCase()} email:`, err);
+          });
+      }
     }
 
     const transformed = {
