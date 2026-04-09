@@ -13,7 +13,8 @@
     "vercel-build": "npm run build",
     "reset:local-db": "tsx scripts/reset-local-db.ts",
     "verify:invite-submit": "tsx scripts/verify-invite-submit-validation.ts",
-    "migrate:leave-requests": "tsx scripts/apply-leave-requests-migration.ts"
+    "migrate:leave-requests": "tsx scripts/apply-leave-requests-migration.ts",
+    "migrate:department-constraint": "tsx scripts/apply-department-constraint-migration.ts"
   },
   "keywords": [],
   "author": "",

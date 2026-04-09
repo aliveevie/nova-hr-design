@@ -9,7 +9,7 @@ const validInvitePayload = {
   name: "Test User",
   email: "invite-test@example.com",
   phone: "+2348000000000",
-  department: "Engineering",
+  department: "Technical Operations",
   jobTitle: "Developer",
   status: "Active",
   joinDate: "2025-01-15",

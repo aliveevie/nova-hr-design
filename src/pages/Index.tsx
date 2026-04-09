@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Users, UserCheck, CalendarOff, Clock, TrendingUp, TrendingDown, Link2, Copy } from "lucide-react";
+import { Users, UserCheck, CalendarOff, Clock, TrendingUp, TrendingDown, Link2, Copy, Trash2, Ban } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,15 @@ const Dashboard = () => {
     activeInvites: number;
   } | null>(null);
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
+  const [invites, setInvites] = useState<Array<{
+    id: string;
+    token: string | null;
+    label: string | null;
+    expiresAt: string;
+    revokedAt: string | null;
+    createdAt: string;
+    completionCount: number;
+  }>>([]);
 
   useEffect(() => {
     if (user?.role !== "HR Admin") return;
@@ -33,6 +42,10 @@ const Dashboard = () => {
       .stats()
       .then(setInviteStats)
       .catch(() => setInviteStats(null));
+    inviteApi
+      .list()
+      .then((r) => setInvites(r.invites))
+      .catch(() => setInvites([]));
   }, [user?.role]);
 
   const employeeIdSet = new Set(employees.map((e) => e.id));
@@ -104,6 +117,8 @@ const Dashboard = () => {
       });
       const s = await inviteApi.stats();
       setInviteStats(s);
+      const list = await inviteApi.list();
+      setInvites(list.invites);
     } catch (e: unknown) {
       const err = e as Error;
       toast({
@@ -118,6 +133,52 @@ const Dashboard = () => {
     if (!lastInviteUrl) return;
     await navigator.clipboard.writeText(lastInviteUrl);
     toast({ title: "Copied" });
+  };
+
+  const copyInviteLink = async (token: string | null) => {
+    if (!token) {
+      toast({
+        title: "Link unavailable",
+        description: "This invite was created before secure link storage. Create a new invite link.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const url = `${window.location.origin}/staff-onboarding/${token}`;
+    await navigator.clipboard.writeText(url);
+    toast({ title: "Invite link copied" });
+  };
+
+  const handleRevokeInvite = async (id: string) => {
+    try {
+      await inviteApi.revoke(id);
+      const [stats, list] = await Promise.all([inviteApi.stats(), inviteApi.list()]);
+      setInviteStats(stats);
+      setInvites(list.invites);
+      toast({ title: "Invite deactivated" });
+    } catch (e: any) {
+      toast({
+        title: "Could not deactivate invite",
+        description: e?.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteInvite = async (id: string) => {
+    try {
+      await inviteApi.remove(id);
+      const [stats, list] = await Promise.all([inviteApi.stats(), inviteApi.list()]);
+      setInviteStats(stats);
+      setInvites(list.invites);
+      toast({ title: "Invite deleted" });
+    } catch (e: any) {
+      toast({
+        title: "Could not delete invite",
+        description: e?.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -171,6 +232,45 @@ const Dashboard = () => {
                 </div>
               </div>
             ) : null}
+            <div className="pt-2">
+              <p className="text-xs text-muted-foreground mb-2">Created invite links</p>
+              <div className="space-y-2 max-h-52 overflow-auto pr-1">
+                {invites.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No invites yet.</p>
+                ) : (
+                  invites.map((inv) => {
+                    const isInactive =
+                      !!inv.revokedAt || new Date(inv.expiresAt).getTime() <= Date.now();
+                    return (
+                      <div key={inv.id} className="rounded-md border p-2 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{inv.label || "Staff invite"}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            Created {new Date(inv.createdAt).toLocaleString()} • expires {new Date(inv.expiresAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Badge variant={isInactive ? "secondary" : "default"}>
+                            {isInactive ? "Inactive" : "Active"}
+                          </Badge>
+                          <Button type="button" variant="outline" size="icon" onClick={() => copyInviteLink(inv.token)}>
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          {!isInactive ? (
+                            <Button type="button" variant="outline" size="icon" onClick={() => handleRevokeInvite(inv.id)}>
+                              <Ban className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                          <Button type="button" variant="outline" size="icon" onClick={() => handleDeleteInvite(inv.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
       ) : null}

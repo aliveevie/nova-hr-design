@@ -12,6 +12,7 @@ const hashToken = (raw: string) =>
 
 export type StaffInviteRow = {
   id: string;
+  raw_token?: string | null;
   token_hash: string;
   admin_user_id: string;
   label: string | null;
@@ -33,9 +34,9 @@ export const createStaffInvite = async (
   if (isSupabaseEnabled) {
     const sql = getSql()!;
     const [row] = await sql`
-      insert into staff_invites (token_hash, admin_user_id, label, expires_at)
-      values (${tokenHash}, ${adminUserId}, ${opts?.label ?? null}, ${expiresAt.toISOString()})
-      returning id, token_hash, admin_user_id, label, expires_at, revoked_at, created_at
+      insert into staff_invites (raw_token, token_hash, admin_user_id, label, expires_at)
+      values (${rawToken}, ${tokenHash}, ${adminUserId}, ${opts?.label ?? null}, ${expiresAt.toISOString()})
+      returning id, raw_token, token_hash, admin_user_id, label, expires_at, revoked_at, created_at
     `;
     return { rawToken, invite: row as StaffInviteRow };
   }
@@ -46,6 +47,7 @@ export const createStaffInvite = async (
   const id = randomUUID();
   const invite = {
     id,
+    raw_token: rawToken,
     token_hash: tokenHash,
     admin_user_id: adminUserId,
     label: opts?.label ?? null,
@@ -62,7 +64,7 @@ export const listInvitesForAdmin = async (adminUserId: string) => {
   if (isSupabaseEnabled) {
     const sql = getSql()!;
     return sql`
-      select i.id, i.label, i.expires_at, i.revoked_at, i.created_at,
+      select i.id, i.raw_token, i.label, i.expires_at, i.revoked_at, i.created_at,
         (select count(*)::int from employees e where e.created_via_invite_id = i.id) as completion_count
       from staff_invites i
       where i.admin_user_id = ${adminUserId}
@@ -77,6 +79,7 @@ export const listInvitesForAdmin = async (adminUserId: string) => {
     .filter((i) => i.admin_user_id === adminUserId)
     .map((i) => ({
       id: i.id,
+      raw_token: i.raw_token ?? null,
       label: i.label,
       expires_at: i.expires_at,
       revoked_at: i.revoked_at,
@@ -103,6 +106,47 @@ export const getInviteStatsForAdmin = async (adminUserId: string) => {
       return new Date(i.expires_at) > new Date();
     }).length,
   };
+};
+
+export const revokeInviteForAdmin = async (adminUserId: string, inviteId: string) => {
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    const rows = await sql`
+      update staff_invites
+      set revoked_at = now()
+      where id = ${inviteId} and admin_user_id = ${adminUserId}
+      returning id
+    `;
+    return rows[0] || null;
+  }
+  await dbHelpers.read();
+  const db = getDatabase();
+  const invites = ((db.data as any).staffInvites || []) as any[];
+  const idx = invites.findIndex((i) => i.id === inviteId && i.admin_user_id === adminUserId);
+  if (idx === -1) return null;
+  invites[idx].revoked_at = new Date().toISOString();
+  await dbHelpers.write();
+  return { id: inviteId };
+};
+
+export const deleteInviteForAdmin = async (adminUserId: string, inviteId: string) => {
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    const rows = await sql`
+      delete from staff_invites
+      where id = ${inviteId} and admin_user_id = ${adminUserId}
+      returning id
+    `;
+    return rows[0] || null;
+  }
+  await dbHelpers.read();
+  const db = getDatabase();
+  const invites = ((db.data as any).staffInvites || []) as any[];
+  const idx = invites.findIndex((i) => i.id === inviteId && i.admin_user_id === adminUserId);
+  if (idx === -1) return null;
+  invites.splice(idx, 1);
+  await dbHelpers.write();
+  return { id: inviteId };
 };
 
 const findInviteByRawToken = async (rawToken: string) => {

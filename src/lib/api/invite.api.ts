@@ -11,12 +11,19 @@ export const inviteApi = {
   list: () =>
     apiClient.get<{ invites: Array<{
       id: string;
+      token: string | null;
       label: string | null;
       expiresAt: string;
       revokedAt: string | null;
       createdAt: string;
       completionCount: number;
     }>; baseUrl: string }>("/invites"),
+
+  revoke: (id: string) =>
+    apiClient.put<{ success: boolean }>(`/invites/${id}/revoke`),
+
+  remove: (id: string) =>
+    apiClient.delete<{ success: boolean }>(`/invites/${id}`),
 
   stats: () =>
     apiClient.get<{

@@ -1,5 +1,16 @@
 import { z } from "zod";
 
+export const allowedDepartments = [
+  "Finance and Accounting (Financial Control, Treasury, Financial Operations, Credit Control)",
+  "Corporate Services (Facility Management, Fleet Management, Physical Security)",
+  "Sales and Marketing",
+  "Customer Support Services",
+  "Research and Development",
+  "Technical Operations",
+  "Digital Skills Development",
+  "Information Security",
+] as const;
+
 export const employeeSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
@@ -10,7 +21,7 @@ export const employeeSchema = z.object({
   dateOfBirth: z.string().optional(),
   gender: z.enum(["Male", "Female", "Other"]).optional(),
   address: z.string().optional(),
-  department: z.string().min(1),
+  department: z.enum(allowedDepartments),
   jobTitle: z.string().min(1),
   grade: z.string().optional(),
   level: z.string().optional(),

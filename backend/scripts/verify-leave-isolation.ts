@@ -45,8 +45,8 @@ async function main() {
       insert into employees (
         id, name, email, phone, department, job_title, status, join_date, salary, initials, admin_owner_id
       ) values
-      (${empAId}, ${"Scoped Emp A"}, ${empAEmail}, ${"08000000001"}, ${"Engineering"}, ${"Developer"}, ${"Active"}, ${"2026-01-01"}, ${100000}, ${"EA"}, ${hrAId}),
-      (${empBId}, ${"Scoped Emp B"}, ${empBEmail}, ${"08000000002"}, ${"Engineering"}, ${"Developer"}, ${"Active"}, ${"2026-01-01"}, ${120000}, ${"EB"}, ${hrBId})
+      (${empAId}, ${"Scoped Emp A"}, ${empAEmail}, ${"08000000001"}, ${"Technical Operations"}, ${"Developer"}, ${"Active"}, ${"2026-01-01"}, ${100000}, ${"EA"}, ${hrAId}),
+      (${empBId}, ${"Scoped Emp B"}, ${empBEmail}, ${"08000000002"}, ${"Technical Operations"}, ${"Developer"}, ${"Active"}, ${"2026-01-01"}, ${120000}, ${"EB"}, ${hrBId})
     `;
 
     await sql`

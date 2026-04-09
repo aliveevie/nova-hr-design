@@ -27,7 +27,16 @@ interface EmployeeFormProps {
   scrollMode?: "modal" | "page";
 }
 
-const departments = ["Engineering", "Marketing", "Human Resources", "Finance", "Sales", "Design", "Operations"];
+const departments = [
+  "Finance and Accounting (Financial Control, Treasury, Financial Operations, Credit Control)",
+  "Corporate Services (Facility Management, Fleet Management, Physical Security)",
+  "Sales and Marketing",
+  "Customer Support Services",
+  "Research and Development",
+  "Technical Operations",
+  "Digital Skills Development",
+  "Information Security",
+];
 
 export const EmployeeForm = ({
   employee,

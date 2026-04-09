@@ -2,8 +2,10 @@ import { Request, Response } from "express";
 import { AuthRequest } from "../middleware/auth.middleware.js";
 import {
   createStaffInvite,
+  deleteInviteForAdmin,
   getInviteStatsForAdmin,
   listInvitesForAdmin,
+  revokeInviteForAdmin,
   submitStaffInvite,
   validateStaffInviteToken,
 } from "../services/invite.service.js";
@@ -46,6 +48,7 @@ export const listInvitesController = async (req: AuthRequest, res: Response) => 
     const base = env.FRONTEND_URL.replace(/\/$/, "");
     const invites = rows.map((r: any) => ({
       id: r.id,
+      token: r.raw_token ?? null,
       label: r.label,
       expiresAt: r.expires_at,
       revokedAt: r.revoked_at,
@@ -55,6 +58,32 @@ export const listInvitesController = async (req: AuthRequest, res: Response) => 
     res.json({ invites, baseUrl: `${base}/staff-onboarding` });
   } catch (e) {
     console.error("listInvitesController:", e);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const revokeInviteController = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const { id } = req.params;
+    const updated = await revokeInviteForAdmin(req.user.userId, id);
+    if (!updated) return res.status(404).json({ error: "Invite not found" });
+    res.json({ success: true });
+  } catch (e) {
+    console.error("revokeInviteController:", e);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const deleteInviteController = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const { id } = req.params;
+    const deleted = await deleteInviteForAdmin(req.user.userId, id);
+    if (!deleted) return res.status(404).json({ error: "Invite not found" });
+    res.json({ success: true });
+  } catch (e) {
+    console.error("deleteInviteController:", e);
     res.status(500).json({ error: "Internal server error" });
   }
 };

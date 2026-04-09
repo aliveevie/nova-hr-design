@@ -47,7 +47,18 @@ create table if not exists employees (
   date_of_birth text,
   gender text,
   address text,
-  department text not null,
+  department text not null check (
+    department in (
+      'Finance and Accounting (Financial Control, Treasury, Financial Operations, Credit Control)',
+      'Corporate Services (Facility Management, Fleet Management, Physical Security)',
+      'Sales and Marketing',
+      'Customer Support Services',
+      'Research and Development',
+      'Technical Operations',
+      'Digital Skills Development',
+      'Information Security'
+    )
+  ),
   job_title text not null,
   grade text,
   level text,
@@ -73,6 +84,28 @@ begin
     alter table users
       add constraint users_employee_fk
       foreign key (employee_id) references employees(id) on delete set null;
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'employees_department_allowed_chk'
+  ) then
+    alter table employees
+      add constraint employees_department_allowed_chk
+      check (
+        department in (
+          'Finance and Accounting (Financial Control, Treasury, Financial Operations, Credit Control)',
+          'Corporate Services (Facility Management, Fleet Management, Physical Security)',
+          'Sales and Marketing',
+          'Customer Support Services',
+          'Research and Development',
+          'Technical Operations',
+          'Digital Skills Development',
+          'Information Security'
+        )
+      ) not valid;
   end if;
 end $$;
 
@@ -159,6 +192,7 @@ alter table employees add column if not exists created_via_invite_id uuid;
 
 create table if not exists staff_invites (
   id uuid primary key default gen_random_uuid(),
+  raw_token text,
   token_hash text not null unique,
   admin_user_id uuid not null references users (id) on delete cascade,
   label text,
@@ -168,6 +202,7 @@ create table if not exists staff_invites (
 );
 
 create index if not exists idx_staff_invites_admin on staff_invites (admin_user_id);
+alter table staff_invites add column if not exists raw_token text;
 
 do $$
 begin
