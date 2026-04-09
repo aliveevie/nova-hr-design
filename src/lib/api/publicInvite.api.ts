@@ -15,4 +15,10 @@ export const publicInviteApi = {
       message: string;
       employee: { id: string; name: string; email: string };
     }>(`/public/staff-invite/${encodeURIComponent(token)}/submit`, body),
+
+  resendWelcome: (token: string, body: { email: string; deviceId?: string }) =>
+    apiClient.post<{ success: boolean; message: string }>(
+      `/public/staff-invite/${encodeURIComponent(token)}/resend-welcome`,
+      body
+    ),
 };

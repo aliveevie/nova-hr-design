@@ -1,6 +1,6 @@
 // Single base for every API call (auth, employees, invites, public onboarding, etc.).
-// Same as Vite env used at build/runtime; login and all modules share this.
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://server-hr-nova.vercel.app/api";
+// Keep this environment-driven; do not hardcode deployment URLs.
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 export const getApiBaseUrl = (): string => API_BASE_URL;
 
@@ -81,6 +81,25 @@ class ApiClient {
 
   async delete<T>(endpoint: string): Promise<T> {
     return this.request<T>(endpoint, { method: "DELETE" });
+  }
+
+  async getBlob(endpoint: string): Promise<Blob> {
+    const token = this.getToken();
+    const url = `${this.baseURL}${endpoint}`;
+    const headers: HeadersInit = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const response = await fetch(url, { method: "GET", headers });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "Unknown error" }));
+      const apiError = new Error(error.error || `HTTP error! status: ${response.status}`) as Error & {
+        details?: unknown;
+        status?: number;
+      };
+      apiError.details = error;
+      apiError.status = response.status;
+      throw apiError;
+    }
+    return response.blob();
   }
 }
 

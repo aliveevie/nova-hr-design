@@ -7,11 +7,19 @@ import {
   listInvitesForAdmin,
   revokeInviteForAdmin,
   submitStaffInvite,
+  resendWelcomeEmailForInvite,
   validateStaffInviteToken,
 } from "../services/invite.service.js";
 import { env } from "../config/env.js";
 import { sendWelcomeEmailForNewEmployeeRow } from "../services/email.service.js";
 import { mapUniqueViolationToPublicInviteResponse } from "../utils/postgres-conflict.util.js";
+
+const getClientIp = (req: Request) => {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.length > 0) return forwarded.split(",")[0].trim();
+  if (Array.isArray(forwarded) && forwarded.length > 0) return forwarded[0];
+  return req.ip || "unknown";
+};
 
 export const createInviteController = async (req: AuthRequest, res: Response) => {
   try {
@@ -162,6 +170,30 @@ export const submitPublicInviteController = async (req: Request, res: Response) 
       return res.status(conflict.status).json(conflict.body);
     }
     console.error("submitPublicInviteController:", e);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const resendPublicInviteWelcomeController = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.params;
+    const email = String(req.body?.email || "").trim();
+    const deviceId = typeof req.body?.deviceId === "string" ? req.body.deviceId : undefined;
+    if (!token) return res.status(400).json({ error: "Missing token" });
+    if (!email) return res.status(400).json({ error: "Email is required" });
+
+    const result = await resendWelcomeEmailForInvite({
+      rawToken: token,
+      email,
+      ipAddress: getClientIp(req),
+      deviceId,
+    });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    return res.json({ success: true, message: "Welcome email sent. Please check your inbox/spam folder." });
+  } catch (e) {
+    console.error("resendPublicInviteWelcomeController:", e);
     res.status(500).json({ error: "Internal server error" });
   }
 };

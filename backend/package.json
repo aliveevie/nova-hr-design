@@ -14,7 +14,10 @@
     "reset:local-db": "tsx scripts/reset-local-db.ts",
     "verify:invite-submit": "tsx scripts/verify-invite-submit-validation.ts",
     "migrate:leave-requests": "tsx scripts/apply-leave-requests-migration.ts",
-    "migrate:department-constraint": "tsx scripts/apply-department-constraint-migration.ts"
+    "migrate:department-constraint": "tsx scripts/apply-department-constraint-migration.ts",
+    "migrate:employee-documents-workflow": "tsx scripts/apply-employee-documents-workflow-migration.ts",
+    "verify:employee-work-docs": "tsx scripts/verify-employee-work-docs.ts",
+    "verify:invite-resend-e2e": "tsx scripts/verify-invite-resend-e2e.ts"
   },
   "keywords": [],
   "author": "",

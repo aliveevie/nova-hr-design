@@ -25,42 +25,60 @@ interface EmailOptions {
 }
 
 export const sendEmail = async (options: EmailOptions): Promise<{ success: boolean; previewUrl?: string; messageId?: string }> => {
-  try {
-    const transport = await getTransporter();
-    const info = await transport.sendMail({
-      from: emailConfig.from,
-      to: Array.isArray(options.to) ? options.to.join(", ") : options.to,
-      subject: options.subject,
-      html: options.html,
-      text: options.text || options.html.replace(/<[^>]*>/g, ""),
-    });
+  const payload = {
+    from: emailConfig.from,
+    to: Array.isArray(options.to) ? options.to.join(", ") : options.to,
+    subject: options.subject,
+    html: options.html,
+    text: options.text || options.html.replace(/<[^>]*>/g, ""),
+  };
 
-    // If using Ethereal, get preview URL
-    const previewUrl = nodemailer.getTestMessageUrl(info);
-    if (previewUrl) {
-      console.log("✅ Email sent via Ethereal. Preview URL:", previewUrl);
-      return { success: true, previewUrl, messageId: info.messageId };
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const transport = await getTransporter();
+      const info = await transport.sendMail(payload);
+      const previewUrl = nodemailer.getTestMessageUrl(info);
+      if (previewUrl) {
+        console.log("✅ Email sent via Ethereal. Preview URL:", previewUrl);
+        return { success: true, previewUrl, messageId: info.messageId };
+      }
+      console.log(`✅ Email sent successfully to ${options.to}. Message ID: ${info.messageId}`);
+      return { success: true, messageId: info.messageId };
+    } catch (error: any) {
+      const code = String(error?.code || "");
+      const transient = code === "ETIMEDOUT" || code === "ESOCKET" || code === "ECONNECTION";
+      console.error(`❌ Error sending email to ${options.to}:`, error.message || error);
+      if (error.code) console.error(`   Error code: ${error.code}`);
+      if (attempt === 1 && transient) {
+        // Recreate transport and retry once for transient SMTP timeout/socket failures.
+        transporter = null;
+        continue;
+      }
+      return { success: false };
     }
-
-    console.log(`✅ Email sent successfully to ${options.to}. Message ID: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
-  } catch (error: any) {
-    console.error(`❌ Error sending email to ${options.to}:`, error.message || error);
-    if (error.code) {
-      console.error(`   Error code: ${error.code}`);
-    }
-    return { success: false };
   }
+  return { success: false };
 };
 
 const loadTemplate = (templateName: string): string => {
-  try {
-    const templatePath = join(__dirname, "../templates", `${templateName}.html`);
-    return readFileSync(templatePath, "utf-8");
-  } catch (error) {
-    console.error(`Error loading template ${templateName}:`, error);
-    return "";
+  const file = `${templateName}.html`;
+  // Try both runtime layouts:
+  // 1) tsx/dev: backend/src/services -> ../templates
+  // 2) tsc/dist: backend/dist/src/services -> ../../src/templates
+  const candidates = [
+    join(__dirname, "../templates", file),
+    join(__dirname, "../../src/templates", file),
+    join(process.cwd(), "src/templates", file),
+  ];
+  for (const p of candidates) {
+    try {
+      return readFileSync(p, "utf-8");
+    } catch {
+      // try next candidate
+    }
   }
+  console.error(`Error loading template ${templateName}: no template file found in known paths.`);
+  return "";
 };
 
 const replaceTemplateVariables = (template: string, variables: Record<string, string>): string => {
@@ -246,14 +264,23 @@ export const sendEmployeeWelcomeWithLogin = async (
   loginUrl: string
 ) => {
   const template = loadTemplate("employee-welcome-login");
-  const html = replaceTemplateVariables(template, {
-    employeeName,
-    jobTitle,
-    department,
-    email: employeeEmail,
-    password,
-    loginUrl,
-  });
+  const html = template
+    ? replaceTemplateVariables(template, {
+        employeeName,
+        jobTitle,
+        department,
+        email: employeeEmail,
+        password,
+        loginUrl,
+      })
+    : `
+      <h2>Welcome to GalaxyITT HR System</h2>
+      <p>Hello ${employeeName}, your employee account has been created.</p>
+      <p><strong>Email:</strong> ${employeeEmail}</p>
+      <p><strong>Temporary Password:</strong> ${password}</p>
+      <p><strong>Login URL:</strong> <a href="${loginUrl}">${loginUrl}</a></p>
+      <p>Please sign in and change your password immediately.</p>
+    `;
   return sendEmail({
     to: employeeEmail,
     subject: `Welcome to GalaxyITT HR System - Your Login Credentials`,

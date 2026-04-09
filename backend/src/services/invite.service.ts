@@ -4,8 +4,12 @@ import { getSql, isSupabaseEnabled } from "../config/supabase.js";
 import { createEmployee } from "./employee.service.js";
 import { employeeSchema } from "../utils/validators.js";
 import { normalizeInviteEmployeeBody } from "../utils/invite-employee-payload.util.js";
+import { hashPassword } from "../utils/password.util.js";
+import { sendWelcomeEmailForNewEmployeeRow } from "./email.service.js";
 
 const ONBOARDING_EMAIL_DOMAIN = "galaxyitt.com.ng";
+const RESEND_WINDOW_MS = 2 * 60 * 1000;
+const resendGuard = new Map<string, number>();
 
 const hashToken = (raw: string) =>
   createHash("sha256").update(raw, "utf8").digest("hex");
@@ -205,4 +209,123 @@ export const submitStaffInvite = async (rawToken: string, body: unknown) => {
   });
 
   return { success: true as const, employee };
+};
+
+const makeTempPassword = () =>
+  Math.random().toString(36).slice(-12) +
+  Math.random().toString(36).slice(-12).toUpperCase() +
+  "!@#";
+
+export const resendWelcomeEmailForInvite = async (params: {
+  rawToken: string;
+  email: string;
+  ipAddress?: string;
+  deviceId?: string;
+}) => {
+  const email = String(params.email || "").trim().toLowerCase();
+  if (!email.endsWith(`@${ONBOARDING_EMAIL_DOMAIN}`)) {
+    return { success: false as const, error: `Use your @${ONBOARDING_EMAIL_DOMAIN} work email` };
+  }
+
+  const checked = await validateStaffInviteToken(params.rawToken);
+  if (!checked.valid || !("invite" in checked)) {
+    return { success: false as const, error: "Invalid or expired invite link" };
+  }
+  const invite = checked.invite as StaffInviteRow;
+
+  const gateKey = `${invite.id}:${email}:${params.deviceId || "-"}:${params.ipAddress || "-"}`;
+  const last = resendGuard.get(gateKey) || 0;
+  if (Date.now() - last < RESEND_WINDOW_MS) {
+    return {
+      success: false as const,
+      error: "Resend already requested recently. Please wait 2 minutes and try again.",
+    };
+  }
+
+  let employee: any = null;
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    const rows = await sql`
+      select * from employees
+      where created_via_invite_id = ${invite.id}
+        and lower(email) = ${email}
+      limit 1
+    `;
+    employee = rows[0] || null;
+    if (!employee) {
+      const fallbackRows = await sql`
+        select * from employees
+        where admin_owner_id = ${invite.admin_user_id}
+          and lower(email) = ${email}
+        limit 1
+      `;
+      employee = fallbackRows[0] || null;
+    }
+    if (!employee) {
+      const globalRows = await sql`
+        select * from employees
+        where lower(email) = ${email}
+        limit 1
+      `;
+      employee = globalRows[0] || null;
+    }
+    if (!employee) {
+      // Prevent account enumeration: return success message even when no match exists.
+      resendGuard.set(gateKey, Date.now());
+      return { success: true as const };
+    }
+    const tempPassword = makeTempPassword();
+    const hashed = await hashPassword(tempPassword);
+    await sql`
+      update users
+      set password = ${hashed}, password_must_change = false
+      where employee_id = ${employee.id}
+    `;
+    const sent = await sendWelcomeEmailForNewEmployeeRow(employee, tempPassword);
+    if (!sent.success) {
+      return { success: false as const, error: "Email could not be sent right now. Please try again." };
+    }
+  } else {
+    await dbHelpers.read();
+    const db = getDatabase();
+    employee = (db.data.employees || []).find(
+      (e: any) =>
+        String(e.created_via_invite_id || "") === String(invite.id) &&
+        String(e.email || "").toLowerCase() === email
+    );
+    if (!employee) {
+      employee = (db.data.employees || []).find(
+        (e: any) =>
+          String(e.admin_owner_id || "") === String(invite.admin_user_id) &&
+          String(e.email || "").toLowerCase() === email
+      );
+    }
+    if (!employee) {
+      employee = (db.data.employees || []).find(
+        (e: any) => String(e.email || "").toLowerCase() === email
+      );
+    }
+    if (!employee) {
+      // Prevent account enumeration: return success message even when no match exists.
+      resendGuard.set(gateKey, Date.now());
+      return { success: true as const };
+    }
+    const tempPassword = makeTempPassword();
+    const hashed = await hashPassword(tempPassword);
+    const u = (db.data.users || []).find((x: any) => String(x.employeeId || x.employee_id) === String(employee.id));
+    if (!u) {
+      return { success: false as const, error: "Employee account not found for resend." };
+    }
+    u.password = hashed;
+    u.password_must_change = false;
+    u.updated_at = new Date().toISOString();
+    await dbHelpers.write();
+    const sent = await sendWelcomeEmailForNewEmployeeRow(employee, tempPassword);
+    if (!sent.success) {
+      return { success: false as const, error: "Email could not be sent right now. Please try again." };
+    }
+  }
+
+  resendGuard.set(gateKey, Date.now());
+  return { success: true as const };
 };

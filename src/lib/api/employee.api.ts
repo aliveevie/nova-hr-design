@@ -1,6 +1,17 @@
 import { apiClient } from "./client.js";
 import { Employee } from "@/types";
 
+export type EmployeeWorkDoc = {
+  id: string;
+  name: string;
+  kind: "job_profile" | "okr_admin" | "okr_employee";
+  mimeType: string;
+  uploadedDate: string;
+  hasFile: boolean;
+  hasText: boolean;
+  textContent?: string | null;
+};
+
 export const employeeApi = {
   getAll: async (filters?: { department?: string; status?: string }): Promise<{ employees: Employee[] }> => {
     const params = new URLSearchParams();
@@ -37,6 +48,38 @@ export const employeeApi = {
     const formData = new FormData();
     formData.append("file", file);
     return apiClient.postForm("/employees/bulk-upload", formData);
+  },
+
+  getWorkDocs: async (
+    id: string
+  ): Promise<{ jobProfile: EmployeeWorkDoc | null; okrTemplate: EmployeeWorkDoc | null; okrSubmission: EmployeeWorkDoc | null }> => {
+    return apiClient.get(`/employees/${id}/work-docs`);
+  },
+
+  uploadJobProfile: async (id: string, args: { file?: File; textContent?: string }) => {
+    const formData = new FormData();
+    if (args.file) formData.append("file", args.file);
+    if (args.textContent) formData.append("textContent", args.textContent);
+    return apiClient.postForm(`/employees/${id}/job-profile`, formData);
+  },
+
+  uploadOkrTemplate: async (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiClient.postForm(`/employees/${id}/okr-template`, formData);
+  },
+
+  uploadOkrSubmission: async (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiClient.postForm(`/employees/${id}/okr-submission`, formData);
+  },
+
+  downloadWorkDoc: async (
+    id: string,
+    kind: "job_profile" | "okr_admin" | "okr_employee"
+  ): Promise<Blob> => {
+    return apiClient.getBlob(`/employees/${id}/work-docs/${kind}/download`);
   },
 };
 

@@ -13,6 +13,7 @@ import {
 } from "@/lib/employeeValidationMessages";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +34,17 @@ const StaffOnboarding = () => {
   /** Server-side validation (Zod) — plain-language lines for the user */
   const [serverIssues, setServerIssues] = useState<string[]>([]);
   const [focusFieldId, setFocusFieldId] = useState<string | undefined>();
+  const [resendEmail, setResendEmail] = useState("");
+  const [resending, setResending] = useState(false);
+
+  const getDeviceId = () => {
+    const key = "onboarding_device_id";
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+    const created = crypto.randomUUID();
+    localStorage.setItem(key, created);
+    return created;
+  };
 
   useLayoutEffect(() => {
     if (!focusFieldId || serverIssues.length === 0) return;
@@ -59,6 +71,10 @@ const StaffOnboarding = () => {
       } catch {
         if (!cancelled) setReason("invalid");
       } finally {
+        if (!cancelled && token) {
+          const cached = localStorage.getItem(`invite_email_${token}`);
+          if (cached) setResendEmail(cached);
+        }
         if (!cancelled) setChecking(false);
       }
     })();
@@ -74,6 +90,11 @@ const StaffOnboarding = () => {
     setFocusFieldId(undefined);
     try {
       await publicInviteApi.submit(token, data as unknown as Record<string, unknown>);
+      const email = String((data as any).email || "").trim().toLowerCase();
+      if (email) {
+        setResendEmail(email);
+        localStorage.setItem(`invite_email_${token}`, email);
+      }
       setSuccessOpen(true);
     } catch (e: unknown) {
       console.error(e);
@@ -101,6 +122,38 @@ const StaffOnboarding = () => {
       });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleResendWelcome = async () => {
+    if (!token) return;
+    const email = resendEmail.trim().toLowerCase();
+    if (!email) {
+      toast({
+        title: "Email required",
+        description: "Enter your onboarding email to resend login details.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      setResending(true);
+      await publicInviteApi.resendWelcome(token, {
+        email,
+        deviceId: getDeviceId(),
+      });
+      toast({
+        title: "Email sent",
+        description: "Welcome/login details were sent again. Check inbox/spam.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Resend failed",
+        description: e?.message || "Could not resend email now. Try again shortly.",
+        variant: "destructive",
+      });
+    } finally {
+      setResending(false);
     }
   };
 
@@ -187,6 +240,23 @@ const StaffOnboarding = () => {
             showCancel={false}
             submitLabel="Submit profile"
           />
+          <div className="mt-6 rounded-lg border border-zinc-200 p-4">
+            <p className="text-sm font-medium">Didn&apos;t receive your welcome email?</p>
+            <p className="text-xs text-zinc-500 mt-1">
+              Enter the same onboarding email and resend login details.
+            </p>
+            <div className="mt-3 flex flex-col sm:flex-row gap-2">
+              <Input
+                type="email"
+                value={resendEmail}
+                onChange={(e) => setResendEmail(e.target.value)}
+                placeholder="your.name@galaxyitt.com.ng"
+              />
+              <Button type="button" variant="outline" onClick={handleResendWelcome} disabled={resending}>
+                {resending ? "Sending..." : "Resend email"}
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 

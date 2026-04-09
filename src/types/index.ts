@@ -49,6 +49,11 @@ export interface Employee {
     id: string;
     name: string;
     type: string;
+    kind?: "job_profile" | "okr_admin" | "okr_employee";
+    mimeType?: string;
+    hasFile?: boolean;
+    hasText?: boolean;
+    textContent?: string | null;
     uploadedDate: string;
   }>;
 }

@@ -28,6 +28,8 @@ import {
   AlertCircle,
   KeyRound,
   Lock,
+  Upload,
+  Download,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -61,6 +63,13 @@ const EmployeePortal = () => {
   const [activeSection, setActiveSection] = useState<
     "overview" | "profile" | "leave" | "payroll" | "performance" | "training" | "queries" | "account"
   >("overview");
+  const [workDocs, setWorkDocs] = useState<{
+    jobProfile: any | null;
+    okrTemplate: any | null;
+    okrSubmission: any | null;
+  } | null>(null);
+  const [ownOkrFile, setOwnOkrFile] = useState<File | null>(null);
+  const [isUploadingOwnOkr, setIsUploadingOwnOkr] = useState(false);
 
   // Leave form state
   const [leaveType, setLeaveType] = useState<LeaveRequest["type"]>("Annual Leave");
@@ -119,6 +128,9 @@ const EmployeePortal = () => {
       // Load discipline/queries
       const discRes = await disciplineApi.getByEmployee(user.employeeId);
       setDisciplines(discRes.disciplines || []);
+
+      const docsRes = await employeeApi.getWorkDocs(user.employeeId);
+      setWorkDocs(docsRes);
     } catch (error) {
       console.error("Error loading employee data:", error);
       toast({
@@ -128,6 +140,60 @@ const EmployeePortal = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUploadOwnOkr = async () => {
+    if (!user?.employeeId || !ownOkrFile) {
+      toast({
+        title: "Select file",
+        description: "Upload your completed OKR file (.xlsx, .xls, .csv).",
+        variant: "destructive",
+      });
+      return;
+    }
+    const name = ownOkrFile.name.toLowerCase();
+    if (!name.endsWith(".xlsx") && !name.endsWith(".xls") && !name.endsWith(".csv")) {
+      toast({
+        title: "Invalid file",
+        description: "Only .xlsx, .xls, or .csv is allowed for OKR upload.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      setIsUploadingOwnOkr(true);
+      await employeeApi.uploadOkrSubmission(user.employeeId, ownOkrFile);
+      toast({ title: "Uploaded", description: "Your OKR submission was uploaded successfully." });
+      setOwnOkrFile(null);
+      await loadEmployeeData();
+    } catch (error: any) {
+      toast({
+        title: "Upload failed",
+        description: error?.message || "Failed to upload OKR submission",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingOwnOkr(false);
+    }
+  };
+
+  const handleDownloadWorkDoc = async (kind: "job_profile" | "okr_admin" | "okr_employee", fallbackName: string) => {
+    if (!user?.employeeId) return;
+    try {
+      const blob = await employeeApi.downloadWorkDoc(user.employeeId, kind);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fallbackName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast({
+        title: "Download failed",
+        description: error?.message || "Unable to download file.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -492,6 +558,71 @@ const EmployeePortal = () => {
                 ) : (
                   <p className="text-sm text-muted-foreground">No next of kin information added yet.</p>
                 )}
+              </div>
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">Job Profile &amp; OKR</h3>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-md border p-3 space-y-2">
+                    <p className="font-medium">Job Profile</p>
+                    {workDocs?.jobProfile ? (
+                      <>
+                        <p className="text-xs text-muted-foreground">Uploaded: {new Date(workDocs.jobProfile.uploadedDate).toLocaleString()}</p>
+                        {workDocs.jobProfile.hasText && (
+                          <p className="text-sm whitespace-pre-wrap rounded bg-muted p-2">{workDocs.jobProfile.textContent}</p>
+                        )}
+                        {workDocs.jobProfile.hasFile && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDownloadWorkDoc("job_profile", workDocs.jobProfile.name || "job-profile")}
+                          >
+                            <Download className="h-4 w-4 mr-2" />
+                            Download
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No job profile uploaded yet.</p>
+                    )}
+                  </div>
+                  <div className="rounded-md border p-3 space-y-2">
+                    <p className="font-medium">OKR Template from Admin</p>
+                    {workDocs?.okrTemplate ? (
+                      <>
+                        <p className="text-xs text-muted-foreground">Uploaded: {new Date(workDocs.okrTemplate.uploadedDate).toLocaleString()}</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDownloadWorkDoc("okr_admin", workDocs.okrTemplate.name || "okr-template")}
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Download Template
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No OKR template uploaded yet.</p>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-md border p-3 space-y-3">
+                  <p className="font-medium">Upload Your Completed OKR</p>
+                  <Input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => setOwnOkrFile(e.target.files?.[0] || null)} />
+                  <div className="flex gap-2">
+                    <Button onClick={handleUploadOwnOkr} disabled={isUploadingOwnOkr}>
+                      <Upload className="h-4 w-4 mr-2" />
+                      {isUploadingOwnOkr ? "Uploading..." : "Upload My OKR"}
+                    </Button>
+                    {workDocs?.okrSubmission?.hasFile && (
+                      <Button
+                        variant="outline"
+                        onClick={() => handleDownloadWorkDoc("okr_employee", workDocs.okrSubmission.name || "my-okr")}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Download My Last Submission
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

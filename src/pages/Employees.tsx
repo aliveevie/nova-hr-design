@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Search, Eye, Edit, Trash2, Upload, Download } from "lucide-react";
+import { Plus, Search, Eye, Edit, Trash2, Upload, Download, FileText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -13,6 +14,7 @@ import { useEmployees } from "@/lib/store";
 import { EmployeeForm } from "@/components/forms/EmployeeForm";
 import { Employee } from "@/types";
 import { useToast } from "@/hooks/use-toast";
+import { employeeApi, EmployeeWorkDoc } from "@/lib/api/employee.api";
 
 const statusClass: Record<string, string> = {
   Active: "bg-success/10 text-success border-0",
@@ -28,6 +30,16 @@ const Employees = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadErrors, setUploadErrors] = useState<Array<{ row: number; field: string; message: string; rawValue?: unknown }>>([]);
   const [editingEmployee, setEditingEmployee] = useState<Employee | undefined>();
+  const [docsDialogEmployee, setDocsDialogEmployee] = useState<Employee | null>(null);
+  const [jobProfileFile, setJobProfileFile] = useState<File | null>(null);
+  const [okrTemplateFile, setOkrTemplateFile] = useState<File | null>(null);
+  const [jobProfileText, setJobProfileText] = useState("");
+  const [isSavingDocs, setIsSavingDocs] = useState(false);
+  const [workDocs, setWorkDocs] = useState<{
+    jobProfile: EmployeeWorkDoc | null;
+    okrTemplate: EmployeeWorkDoc | null;
+    okrSubmission: EmployeeWorkDoc | null;
+  } | null>(null);
   const { employees, addEmployee, bulkUploadEmployees, updateEmployee, deleteEmployee } = useEmployees();
   const { toast } = useToast();
 
@@ -215,6 +227,76 @@ const Employees = () => {
     URL.revokeObjectURL(url);
   };
 
+  const isAllowedJobProfileFile = (file: File) => {
+    const name = file.name.toLowerCase();
+    return name.endsWith(".doc") || name.endsWith(".docx");
+  };
+
+  const isAllowedOkrFile = (file: File) => {
+    const name = file.name.toLowerCase();
+    return name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv");
+  };
+
+  const openDocsDialog = async (emp: Employee) => {
+    setDocsDialogEmployee(emp);
+    setJobProfileFile(null);
+    setOkrTemplateFile(null);
+    setJobProfileText("");
+    try {
+      const docs = await employeeApi.getWorkDocs(emp.id);
+      setWorkDocs(docs);
+      if (docs.jobProfile?.hasText && docs.jobProfile.textContent) {
+        setJobProfileText(docs.jobProfile.textContent);
+      }
+    } catch (error) {
+      setWorkDocs(null);
+    }
+  };
+
+  const handleSaveWorkDocs = async () => {
+    if (!docsDialogEmployee) return;
+    if (!jobProfileFile && !jobProfileText.trim() && !okrTemplateFile) {
+      toast({
+        title: "No update provided",
+        description: "Upload/write Job Profile and/or upload OKR template.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (jobProfileFile && !isAllowedJobProfileFile(jobProfileFile)) {
+      toast({ title: "Invalid Job Profile file", description: "Use only .doc or .docx", variant: "destructive" });
+      return;
+    }
+    if (okrTemplateFile && !isAllowedOkrFile(okrTemplateFile)) {
+      toast({ title: "Invalid OKR file", description: "Use only .xlsx, .xls or .csv", variant: "destructive" });
+      return;
+    }
+
+    try {
+      setIsSavingDocs(true);
+      if (jobProfileFile || jobProfileText.trim()) {
+        await employeeApi.uploadJobProfile(docsDialogEmployee.id, {
+          file: jobProfileFile || undefined,
+          textContent: jobProfileText.trim() || undefined,
+        });
+      }
+      if (okrTemplateFile) {
+        await employeeApi.uploadOkrTemplate(docsDialogEmployee.id, okrTemplateFile);
+      }
+      const docs = await employeeApi.getWorkDocs(docsDialogEmployee.id);
+      setWorkDocs(docs);
+      toast({ title: "Saved", description: "Job profile / OKR documents updated." });
+    } catch (error: any) {
+      toast({
+        title: "Failed to save work docs",
+        description: error?.message || "Please check the file format and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingDocs(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -353,6 +435,49 @@ const Employees = () => {
                               <DialogTitle>Edit Employee</DialogTitle>
                             </DialogHeader>
                             <EmployeeForm employee={emp} onSubmit={handleUpdate} onCancel={() => setEditingEmployee(undefined)} />
+                          </DialogContent>
+                        </Dialog>
+                        <Dialog open={docsDialogEmployee?.id === emp.id} onOpenChange={(open) => !open && setDocsDialogEmployee(null)}>
+                          <DialogTrigger asChild>
+                            <Button variant="ghost" size="icon" onClick={() => openDocsDialog(emp)}>
+                              <FileText className="h-4 w-4" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                            <DialogHeader>
+                              <DialogTitle>Work Docs: {emp.name}</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                              <div className="rounded-md border p-3 space-y-2">
+                                <p className="font-medium">Job Profile</p>
+                                <p className="text-xs text-muted-foreground">Upload only .doc/.docx or write text below.</p>
+                                <Input type="file" accept=".doc,.docx" onChange={(e) => setJobProfileFile(e.target.files?.[0] || null)} />
+                                <Textarea
+                                  placeholder="Or paste/write job profile text"
+                                  value={jobProfileText}
+                                  onChange={(e) => setJobProfileText(e.target.value)}
+                                  rows={8}
+                                />
+                                {workDocs?.jobProfile?.uploadedDate && (
+                                  <p className="text-xs text-muted-foreground">Latest: {new Date(workDocs.jobProfile.uploadedDate).toLocaleString()}</p>
+                                )}
+                              </div>
+
+                              <div className="rounded-md border p-3 space-y-2">
+                                <p className="font-medium">OKR Template</p>
+                                <p className="text-xs text-muted-foreground">Upload only .xlsx/.xls/.csv (no macro-enabled files).</p>
+                                <Input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => setOkrTemplateFile(e.target.files?.[0] || null)} />
+                                {workDocs?.okrTemplate?.uploadedDate && (
+                                  <p className="text-xs text-muted-foreground">Latest: {new Date(workDocs.okrTemplate.uploadedDate).toLocaleString()}</p>
+                                )}
+                              </div>
+                              <div className="flex justify-end gap-2">
+                                <Button variant="outline" onClick={() => setDocsDialogEmployee(null)}>Close</Button>
+                                <Button onClick={handleSaveWorkDocs} disabled={isSavingDocs}>
+                                  {isSavingDocs ? "Saving..." : "Save"}
+                                </Button>
+                              </div>
+                            </div>
                           </DialogContent>
                         </Dialog>
                         <AlertDialog>
