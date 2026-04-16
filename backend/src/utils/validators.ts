@@ -9,6 +9,9 @@ export const allowedDepartments = [
   "Technical Operations",
   "Digital Skills Development",
   "Information Security",
+  "Human resources and admin",
+  "Procurment logistic and onchain supply",
+  "Gov Integration and stakeholder engagement",
 ] as const;
 
 export const employeeSchema = z.object({
@@ -77,6 +80,44 @@ export const attendanceSchema = z.object({
   checkIn: z.string().optional(),
   checkOut: z.string().optional(),
   status: z.enum(["Present", "Late", "Absent", "On Leave"]),
+});
+
+const latSchema = z
+  .number()
+  .refine((v) => Number.isFinite(v) && v >= -90 && v <= 90, "Latitude must be between -90 and 90");
+const lngSchema = z
+  .number()
+  .refine((v) => Number.isFinite(v) && v >= -180 && v <= 180, "Longitude must be between -180 and 180");
+
+export const officeLocationSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().min(2).max(80),
+  centerLat: latSchema,
+  centerLng: lngSchema,
+  radiusM: z.number().int().positive().max(5000),
+  maxAccuracyM: z.number().int().positive().max(500),
+  entryBufferM: z.number().int().min(0).max(500).optional(),
+  exitBufferM: z.number().int().min(0).max(500).optional(),
+  exitGraceSeconds: z.number().int().min(0).max(3600).optional(),
+  openTime: z.string().regex(/^\d{2}:\d{2}$/, "Open time must be HH:MM").optional(),
+  closeTime: z.string().regex(/^\d{2}:\d{2}$/, "Close time must be HH:MM").optional(),
+  timeZone: z.string().min(1).max(64).optional(),
+  enabled: z.boolean().optional(),
+});
+
+export const deviceRegisterSchema = z.object({
+  deviceId: z.string().min(8).max(128),
+  deviceLabel: z.string().min(1).max(80).optional(),
+  lat: latSchema,
+  lng: lngSchema,
+  accuracyM: z.number().int().positive().max(5000),
+});
+
+export const autoAttendanceEvaluateSchema = z.object({
+  deviceId: z.string().min(8).max(128),
+  lat: latSchema,
+  lng: lngSchema,
+  accuracyM: z.number().int().positive().max(5000),
 });
 
 export const payrollSchema = z.object({

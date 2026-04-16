@@ -7,9 +7,9 @@ interface RoleBasedRouteProps {
 }
 
 const RoleBasedRoute = ({ allowedRoles, redirectTo }: RoleBasedRouteProps) => {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
 
-  if (!user) {
+  if (!user || !isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 

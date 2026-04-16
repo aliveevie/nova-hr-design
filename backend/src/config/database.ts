@@ -14,6 +14,8 @@ interface DatabaseData {
   employees: any[];
   applicants: any[];
   attendance: any[];
+  officeLocations: any[];
+  employeeDevices: any[];
   leaveRequests: any[];
   leaveBalances: any[];
   payrolls: any[];
@@ -30,6 +32,8 @@ const defaultData: DatabaseData = {
   employees: [],
   applicants: [],
   attendance: [],
+  officeLocations: [],
+  employeeDevices: [],
   leaveRequests: [],
   leaveBalances: [],
   payrolls: [],

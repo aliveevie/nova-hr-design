@@ -30,16 +30,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         const parsedUser = JSON.parse(storedUser);
         setUser(parsedUser);
-        setIsAuthenticated(true);
-        
+        // IMPORTANT: don't mark authenticated until /auth/me confirms the token.
+        setIsAuthenticated(false);
+
         // Verify token with API
-        authApi.getMe().catch(() => {
-          // Token invalid, clear storage
-          setUser(null);
-          setIsAuthenticated(false);
-          localStorage.removeItem(AUTH_STORAGE_KEY);
-          localStorage.removeItem("auth_token");
-        });
+        authApi
+          .getMe()
+          .then((me) => {
+            setUser(me.user);
+            setIsAuthenticated(true);
+            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(me.user));
+          })
+          .catch(() => {
+            // Token invalid, clear storage
+            setUser(null);
+            setIsAuthenticated(false);
+            localStorage.removeItem(AUTH_STORAGE_KEY);
+            localStorage.removeItem("auth_token");
+          });
       } catch (error) {
         localStorage.removeItem(AUTH_STORAGE_KEY);
         localStorage.removeItem("auth_token");

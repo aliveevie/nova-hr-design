@@ -36,6 +36,9 @@ const departments = [
   "Technical Operations",
   "Digital Skills Development",
   "Information Security",
+  "Human resources and admin",
+  "Procurment logistic and onchain supply",
+  "Gov Integration and stakeholder engagement",
 ];
 
 export const EmployeeForm = ({

@@ -16,6 +16,7 @@ import { employeeApi, leaveApi, payrollApi, performanceApi, trainingApi, discipl
 import { Employee, LeaveRequest, Payroll, Performance, Training, Discipline } from "@/types";
 import { calculateLeaveDays } from "@/lib/utils/leaveUtils";
 import { useHoliday } from "@/lib/store";
+import { attendanceApi, OfficeLocationDto } from "@/lib/api/attendance.api";
 import {
   Printer,
   Plus,
@@ -70,6 +71,30 @@ const EmployeePortal = () => {
   } | null>(null);
   const [ownOkrFile, setOwnOkrFile] = useState<File | null>(null);
   const [isUploadingOwnOkr, setIsUploadingOwnOkr] = useState(false);
+  const [deviceId] = useState(() => {
+    const key = "attendance_device_id";
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+    const created = crypto.randomUUID();
+    localStorage.setItem(key, created);
+    return created;
+  });
+  const [attendanceStatus, setAttendanceStatus] = useState<{
+    lastAction: "checked_in" | "checked_out" | "none" | null;
+    insideZoneId: string | null;
+    lastEvalAt: string | null;
+    lastError: string | null;
+    lastAccuracyM: number | null;
+  }>({
+    lastAction: null,
+    insideZoneId: null,
+    lastEvalAt: null,
+    lastError: null,
+    lastAccuracyM: null,
+  });
+  const [evaluatingAuto, setEvaluatingAuto] = useState(false);
+  const [officeLocation, setOfficeLocation] = useState<OfficeLocationDto | null>(null);
+  const [myAttendance, setMyAttendance] = useState<any[]>([]);
 
   // Leave form state
   const [leaveType, setLeaveType] = useState<LeaveRequest["type"]>("Annual Leave");
@@ -90,6 +115,105 @@ const EmployeePortal = () => {
       setLoading(false);
     }
   }, [user]);
+
+  const getGeo = async (): Promise<{ lat: number; lng: number; accuracyM: number }> => {
+    if (!navigator.geolocation) throw new Error("Geolocation is not supported on this device.");
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracyM: Math.round(pos.coords.accuracy || 0),
+          });
+        },
+        () => reject(new Error("Location permission denied. Please allow location access.")),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    });
+  };
+
+  // Device registration is automatic on first in-office evaluation.
+
+  const runAutoEvaluate = async () => {
+    if (!user?.employeeId) return;
+    try {
+      setEvaluatingAuto(true);
+      const geo = await getGeo();
+      const result = await attendanceApi.autoEvaluate({
+        deviceId,
+        lat: geo.lat,
+        lng: geo.lng,
+        accuracyM: geo.accuracyM,
+      });
+
+      setAttendanceStatus({
+        lastAction: result.action,
+        insideZoneId: result.insideZoneId,
+        lastEvalAt: new Date().toISOString(),
+        lastError: null,
+        lastAccuracyM: geo.accuracyM,
+      });
+
+      if (result.action === "checked_in") {
+        toast({
+          title: "Checked in",
+          description: "Your attendance was checked in automatically.",
+        });
+      } else if (result.action === "checked_out") {
+        toast({
+          title: "Checked out",
+          description: "Your attendance was checked out automatically.",
+        });
+      }
+
+      // Refresh attendance list after changes
+      try {
+        const att = await attendanceApi.getByEmployee(user.employeeId);
+        setMyAttendance(att.attendance || []);
+      } catch {
+        // ignore
+      }
+    } catch (e: any) {
+      setAttendanceStatus((s) => ({
+        ...s,
+        lastEvalAt: new Date().toISOString(),
+        lastError: e?.message || "Auto evaluation failed",
+      }));
+    } finally {
+      setEvaluatingAuto(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user?.employeeId) return;
+    if (activeSection !== "overview") return;
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const tick = async () => {
+      if (cancelled) return;
+      // Load office config once per session on overview.
+      if (!officeLocation) {
+        try {
+          const res = await attendanceApi.getEmployeeOffice();
+          if (!cancelled) setOfficeLocation(res.location);
+        } catch {
+          // ignore
+        }
+      }
+      await runAutoEvaluate();
+      if (cancelled) return;
+      timer = window.setTimeout(tick, 60_000);
+    };
+
+    // Run once on entering overview.
+    tick();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [activeSection, user?.employeeId, officeLocation]);
 
   const loadEmployeeData = async () => {
     if (!user?.employeeId) return;
@@ -131,6 +255,11 @@ const EmployeePortal = () => {
 
       const docsRes = await employeeApi.getWorkDocs(user.employeeId);
       setWorkDocs(docsRes);
+
+      const officeRes = await attendanceApi.getEmployeeOffice();
+      setOfficeLocation(officeRes.location);
+      const attRes = await attendanceApi.getByEmployee(user.employeeId);
+      setMyAttendance(attRes.attendance || []);
     } catch (error) {
       console.error("Error loading employee data:", error);
       toast({
@@ -461,6 +590,68 @@ const EmployeePortal = () => {
                 </CardContent>
               </Card>
             </div>
+
+            <Card className="border-border/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Automatic Attendance</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="space-y-1">
+                    <p className="font-medium">Attendance is automatic</p>
+                    <p className="text-xs text-muted-foreground">
+                      Device: <span className="font-mono">{deviceId.slice(0, 8)}…</span>
+                      {attendanceStatus.lastAccuracyM != null ? ` • GPS accuracy: ${attendanceStatus.lastAccuracyM}m` : ""}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Last check: {attendanceStatus.lastEvalAt ? new Date(attendanceStatus.lastEvalAt).toLocaleString() : "—"}
+                      {" • "}
+                      Status: {attendanceStatus.insideZoneId ? "In office zone" : "Outside office zone"}
+                    </p>
+                    {officeLocation ? (
+                      <p className="text-xs text-muted-foreground">
+                        Office: <span className="font-medium">{officeLocation.name}</span> • Hours{" "}
+                        {(officeLocation as any).openTime ?? "—"}-{(officeLocation as any).closeTime ?? "—"} • TZ{" "}
+                        {(officeLocation as any).timeZone ?? "—"}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Office attendance is not configured yet by HR Admin.
+                      </p>
+                    )}
+                    {attendanceStatus.lastError ? (
+                      <p className="text-xs text-destructive">{attendanceStatus.lastError}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button onClick={runAutoEvaluate} disabled={evaluatingAuto}>
+                      {evaluatingAuto ? "Checking..." : "Check now"}
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Note: Your browser will ask for location permission. For best results, turn on high-accuracy GPS and keep your
+                  connection active.
+                </p>
+                <div className="rounded-md border p-3">
+                  <p className="text-sm font-medium mb-2">My attendance (recent)</p>
+                  {myAttendance.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No attendance records yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {myAttendance.slice(0, 7).map((r: any) => (
+                        <div key={r.id} className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">{r.date}</span>
+                          <span>
+                            {r.checkIn || "-"} → {r.checkOut || "-"} • <span className="font-medium">{r.status}</span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
         {activeSection === "profile" && (

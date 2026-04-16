@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { Employee } from "@/types";
 import { employeeApi } from "@/lib/api";
+import { useAuth } from "./AuthStore";
 
 interface EmployeeContextType {
   employees: Employee[];
@@ -21,6 +22,7 @@ const EmployeeContext = createContext<EmployeeContextType | undefined>(undefined
 
 export const EmployeeProvider = ({ children }: { children: ReactNode }) => {
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const { isAuthenticated, user } = useAuth();
 
   const refreshEmployees = async () => {
     try {
@@ -32,8 +34,12 @@ export const EmployeeProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
+    // Avoid firing protected /employees calls before auth token validation completes.
+    if (!isAuthenticated) return;
+    if (!user) return;
+    if (user.role !== "HR Admin" && user.role !== "Manager") return;
     refreshEmployees();
-  }, []);
+  }, [isAuthenticated, user?.role]);
 
   const addEmployee = async (employee: Omit<Employee, "id" | "initials">) => {
     try {

@@ -56,7 +56,10 @@ create table if not exists employees (
       'Research and Development',
       'Technical Operations',
       'Digital Skills Development',
-      'Information Security'
+      'Information Security',
+      'Human resources and admin',
+      'Procurment logistic and onchain supply',
+      'Gov Integration and stakeholder engagement'
     )
   ),
   job_title text not null,
@@ -103,7 +106,10 @@ begin
           'Research and Development',
           'Technical Operations',
           'Digital Skills Development',
-          'Information Security'
+          'Information Security',
+          'Human resources and admin',
+          'Procurment logistic and onchain supply',
+          'Gov Integration and stakeholder engagement'
         )
       ) not valid;
   end if;
@@ -217,6 +223,86 @@ for each row execute function set_updated_at();
 -- HR Admin ownership (per-admin dashboard) + staff onboarding invites
 alter table employees add column if not exists admin_owner_id uuid references users (id) on delete set null;
 alter table employees add column if not exists created_via_invite_id uuid;
+
+-- Automatic attendance: Office geofences, device registrations, and attendance records
+create table if not exists office_locations (
+  id uuid primary key default gen_random_uuid(),
+  admin_owner_id uuid not null references users(id) on delete cascade,
+  name text not null,
+  center_lat double precision not null,
+  center_lng double precision not null,
+  radius_m integer not null check (radius_m > 0),
+  max_accuracy_m integer not null check (max_accuracy_m > 0),
+  entry_buffer_m integer not null default 0,
+  exit_buffer_m integer not null default 0,
+  exit_grace_seconds integer not null default 300,
+  open_time text not null default '00:00',
+  close_time text not null default '23:59',
+  time_zone text not null default 'Africa/Lagos',
+  enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_office_locations_admin_owner_id on office_locations(admin_owner_id);
+
+drop trigger if exists set_office_locations_updated_at on office_locations;
+create trigger set_office_locations_updated_at
+before update on office_locations
+for each row execute function set_updated_at();
+
+create table if not exists employee_devices (
+  id uuid primary key default gen_random_uuid(),
+  employee_id uuid not null references employees(id) on delete cascade,
+  device_id text not null,
+  device_label text,
+  registered_at timestamptz not null default now(),
+  auto_attendance_enabled boolean not null default true,
+  last_seen_at timestamptz,
+  last_lat double precision,
+  last_lng double precision,
+  last_accuracy_m integer,
+  last_inside_state boolean not null default false,
+  last_inside_state_at timestamptz,
+  last_zone_id uuid references office_locations(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint employee_devices_employee_deviceid_uniq unique (employee_id, device_id)
+);
+
+create index if not exists idx_employee_devices_employee_id on employee_devices(employee_id);
+create index if not exists idx_employee_devices_device_id on employee_devices(device_id);
+
+drop trigger if exists set_employee_devices_updated_at on employee_devices;
+create trigger set_employee_devices_updated_at
+before update on employee_devices
+for each row execute function set_updated_at();
+
+create table if not exists attendance (
+  id uuid primary key default gen_random_uuid(),
+  employee_id uuid not null references employees(id) on delete cascade,
+  employee_name text not null,
+  date text not null, -- YYYY-MM-DD
+  check_in text not null,
+  check_out text,
+  status text not null check (status in ('Present', 'Late', 'Absent', 'On Leave')),
+  department text,
+  source text not null default 'manual' check (source in ('manual', 'auto')),
+  device_id text,
+  geo_lat double precision,
+  geo_lng double precision,
+  geo_accuracy_m integer,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint attendance_employee_date_uniq unique (employee_id, date)
+);
+
+create index if not exists idx_attendance_employee_id_date on attendance(employee_id, date);
+
+drop trigger if exists set_attendance_updated_at on attendance;
+create trigger set_attendance_updated_at
+before update on attendance
+for each row execute function set_updated_at();
 
 create table if not exists staff_invites (
   id uuid primary key default gen_random_uuid(),

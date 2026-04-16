@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Attendance Check-in</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#f8fafc; margin:0; padding:24px; color:#0f172a; }
+      .card { max-width: 640px; margin:0 auto; background:#ffffff; border:1px solid #e2e8f0; border-radius: 12px; padding: 20px; }
+      .title { font-size: 18px; font-weight: 700; margin: 0 0 8px; }
+      .muted { color:#475569; font-size: 13px; margin: 0 0 16px; }
+      .row { display:flex; gap:12px; flex-wrap:wrap; margin-top: 12px; }
+      .pill { background:#eef2ff; color:#1e3a8a; padding: 8px 10px; border-radius: 10px; font-size: 13px; }
+      .footer { margin-top: 18px; font-size: 12px; color:#64748b; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <p class="title">Checked in successfully</p>
+      <p class="muted">Hello {{name}}, your attendance was checked in automatically.</p>
+      <div class="row">
+        <div class="pill"><strong>Date:</strong> {{date}}</div>
+        <div class="pill"><strong>Time:</strong> {{checkInTime}}</div>
+        <div class="pill"><strong>Location:</strong> {{locationName}}</div>
+      </div>
+      <p class="footer">If you believe this is incorrect, please contact HR.</p>
+    </div>
+  </body>
+</html>
+

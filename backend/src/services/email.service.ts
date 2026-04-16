@@ -311,6 +311,52 @@ export const sendWelcomeEmailForNewEmployeeRow = async (
   );
 };
 
+export const sendAttendanceCheckinEmail = async (params: {
+  to: string;
+  name: string;
+  date: string;
+  checkInTime: string;
+  locationName: string;
+}) => {
+  const template = loadTemplate("attendance-checkin");
+  const html = template
+    ? replaceTemplateVariables(template, {
+        name: params.name,
+        date: params.date,
+        checkInTime: params.checkInTime,
+        locationName: params.locationName,
+      })
+    : `<p>Hi ${params.name},</p><p>Checked in on ${params.date} at ${params.checkInTime} (${params.locationName}).</p>`;
+  return sendEmail({
+    to: params.to,
+    subject: "Attendance check-in",
+    html,
+  });
+};
+
+export const sendAttendanceCheckoutEmail = async (params: {
+  to: string;
+  name: string;
+  date: string;
+  checkOutTime: string;
+  locationName: string;
+}) => {
+  const template = loadTemplate("attendance-checkout");
+  const html = template
+    ? replaceTemplateVariables(template, {
+        name: params.name,
+        date: params.date,
+        checkOutTime: params.checkOutTime,
+        locationName: params.locationName,
+      })
+    : `<p>Hi ${params.name},</p><p>Checked out on ${params.date} at ${params.checkOutTime} (${params.locationName}).</p>`;
+  return sendEmail({
+    to: params.to,
+    subject: "Attendance check-out",
+    html,
+  });
+};
+
 export const sendPasswordResetEmail = async (
   email: string,
   userName: string,
