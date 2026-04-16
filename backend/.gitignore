@@ -8,3 +8,5 @@ database/*.db-journal
 
 .vercel
 database/
+
+.env.vercel.production
