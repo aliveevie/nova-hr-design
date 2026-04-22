@@ -103,22 +103,63 @@ export const officeLocationSchema = z.object({
   closeTime: z.string().regex(/^\d{2}:\d{2}$/, "Close time must be HH:MM").optional(),
   timeZone: z.string().min(1).max(64).optional(),
   enabled: z.boolean().optional(),
+  // Optional list of office public IPs / CIDRs. When set, a request whose
+  // source IP matches ANY entry is treated as "inside the office network" for
+  // auto-attendance, independent of browser geolocation. This is the reliable
+  // cross-browser, cross-device fall-back: all staff on the office Wi-Fi/LAN
+  // share the same WAN IP regardless of which browser they use.
+  allowedIps: z.array(z.string().min(2).max(64)).max(50).optional(),
+  // Optional list of office Wi-Fi SSIDs. Browsers cannot read an SSID on
+  // their own, so the employee selects the network they are connected to
+  // once and the server matches the claim against this list. Matching is
+  // case-insensitive and works identically across every browser / OS.
+  allowedSsids: z.array(z.string().min(1).max(64)).max(20).optional(),
 });
 
+/**
+ * Targeted office-hours update. Does NOT touch geofence fields so the admin
+ * can edit hours independently. All three fields are required.
+ */
+export const officeHoursSchema = z.object({
+  openTime: z.string().regex(/^\d{2}:\d{2}$/, "Open time must be HH:MM"),
+  closeTime: z.string().regex(/^\d{2}:\d{2}$/, "Close time must be HH:MM"),
+  timeZone: z.string().min(1).max(64),
+});
+
+/** Attendance report query params. Dates are ISO YYYY-MM-DD, inclusive. */
+export const attendanceReportQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "from must be YYYY-MM-DD"),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "to must be YYYY-MM-DD"),
+  department: z.string().min(1).max(80).optional(),
+});
+
+// Browsers occasionally return fractional or 0 accuracy. Accept any non-negative
+// number up to 50km (Wi-Fi / IP-geo fall-backs can be this coarse) and normalize
+// downstream. Lat/lng are also optional so that IP-only check-ins work when
+// the user has denied browser geolocation.
 export const deviceRegisterSchema = z.object({
   deviceId: z.string().min(8).max(128),
   deviceLabel: z.string().min(1).max(80).optional(),
-  lat: latSchema,
-  lng: lngSchema,
-  accuracyM: z.number().int().positive().max(5000),
+  lat: latSchema.optional(),
+  lng: lngSchema.optional(),
+  accuracyM: z.number().nonnegative().max(50_000).optional(),
+  ssid: z.string().min(1).max(64).optional(),
 });
 
 export const autoAttendanceEvaluateSchema = z.object({
   deviceId: z.string().min(8).max(128),
-  lat: latSchema,
-  lng: lngSchema,
-  accuracyM: z.number().int().positive().max(5000),
+  lat: latSchema.optional(),
+  lng: lngSchema.optional(),
+  accuracyM: z.number().nonnegative().max(50_000).optional(),
+  // Employee-claimed current Wi-Fi SSID (e.g. "galaxy-itt"). Case-insensitive
+  // match against the office's allowed_ssids list.
+  ssid: z.string().min(1).max(64).optional(),
 });
+
+export const officeIpAllowlistSchema = z
+  .array(z.string().min(2).max(64))
+  .max(50)
+  .optional();
 
 export const payrollSchema = z.object({
   employeeId: z.string().min(1),

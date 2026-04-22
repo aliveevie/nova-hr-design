@@ -240,11 +240,23 @@ create table if not exists office_locations (
   close_time text not null default '23:59',
   time_zone text not null default 'Africa/Lagos',
   enabled boolean not null default true,
+  -- Optional list of office public IPs / CIDR ranges. When an employee's
+  -- request originates from one of these IPs it counts as "inside the office"
+  -- even if browser GPS is unreliable. This is the cross-browser fall-back.
+  allowed_ips text[] not null default '{}',
+  -- Optional list of office Wi-Fi SSIDs (e.g. "galaxy-itt"). Browsers cannot
+  -- read the SSID by themselves, so the employee selects the network they
+  -- are connected to once; the server then matches it against this list.
+  -- Case-insensitive comparison. This is user-claimed and meant to work
+  -- alongside IP + geofence, not to replace them.
+  allowed_ssids text[] not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 create index if not exists idx_office_locations_admin_owner_id on office_locations(admin_owner_id);
+alter table office_locations add column if not exists allowed_ips text[] not null default '{}';
+alter table office_locations add column if not exists allowed_ssids text[] not null default '{}';
 
 drop trigger if exists set_office_locations_updated_at on office_locations;
 create trigger set_office_locations_updated_at

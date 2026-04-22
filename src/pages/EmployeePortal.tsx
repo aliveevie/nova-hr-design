@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/store";
 import { Link } from "react-router-dom";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -27,10 +27,14 @@ import {
   LineChart,
   GraduationCap,
   AlertCircle,
+  Clock,
   KeyRound,
   Lock,
   Upload,
   Download,
+  Smartphone,
+  MapPin,
+  Clock as ClockIcon,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -62,7 +66,15 @@ const EmployeePortal = () => {
   const [isNextOfKinDialogOpen, setIsNextOfKinDialogOpen] = useState(false);
   const [selectedPayroll, setSelectedPayroll] = useState<Payroll | null>(null);
   const [activeSection, setActiveSection] = useState<
-    "overview" | "profile" | "leave" | "payroll" | "performance" | "training" | "queries" | "account"
+    | "overview"
+    | "profile"
+    | "attendance"
+    | "leave"
+    | "payroll"
+    | "performance"
+    | "training"
+    | "queries"
+    | "account"
   >("overview");
   const [workDocs, setWorkDocs] = useState<{
     jobProfile: any | null;
@@ -79,22 +91,90 @@ const EmployeePortal = () => {
     localStorage.setItem(key, created);
     return created;
   });
+  const detectedDeviceLabel = useMemo(() => {
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+    if (/Android/i.test(ua)) return "Android phone";
+    if (/iPhone|iPad|iPod/i.test(ua)) return "iPhone/iPad";
+    if (isMobile) return "Mobile device";
+    if (/Windows/i.test(ua)) return "Windows laptop";
+    if (/Macintosh|Mac OS/i.test(ua)) return "Mac laptop";
+    if (/Linux/i.test(ua)) return "Linux laptop";
+    return "This device";
+  }, []);
+  const isMobileDevice = useMemo(() => {
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+  }, []);
   const [attendanceStatus, setAttendanceStatus] = useState<{
     lastAction: "checked_in" | "checked_out" | "none" | null;
     insideZoneId: string | null;
     lastEvalAt: string | null;
     lastError: string | null;
     lastAccuracyM: number | null;
+    lastLat: number | null;
+    lastLng: number | null;
+    reason?:
+      | "inside"
+      | "inside_via_ip"
+      | "inside_via_ssid"
+      | "no_zones"
+      | "accuracy_too_poor"
+      | "too_far"
+      | "no_fix"
+      | null;
+    matchedVia?: "geo" | "ip" | "ssid" | "none" | null;
+    networkRecognized?: boolean;
+    nearestDistanceM?: number | null;
+    nearestRadiusM?: number | null;
+    nearestMaxAccuracyM?: number | null;
   }>({
     lastAction: null,
     insideZoneId: null,
     lastEvalAt: null,
     lastError: null,
     lastAccuracyM: null,
+    lastLat: null,
+    lastLng: null,
+    reason: null,
+    matchedVia: null,
+    networkRecognized: false,
+    nearestDistanceM: null,
+    nearestRadiusM: null,
+    nearestMaxAccuracyM: null,
   });
   const [evaluatingAuto, setEvaluatingAuto] = useState(false);
+  const [registeringDevice, setRegisteringDevice] = useState(false);
   const [officeLocation, setOfficeLocation] = useState<OfficeLocationDto | null>(null);
+  // Historical note: an earlier iteration let employees pick their office
+  // Wi-Fi. That was removed per product feedback — attendance must be
+  // hands-off. Any legacy selection in localStorage is cleared on mount so
+  // we never send an ssid hint the employee can't see or control.
+  useEffect(() => {
+    try {
+      localStorage.removeItem("attendance_selected_ssid");
+    } catch {
+      // ignore
+    }
+  }, []);
   const [myAttendance, setMyAttendance] = useState<any[]>([]);
+  const [myDevices, setMyDevices] = useState<
+    {
+      deviceId: string;
+      deviceLabel: string | null;
+      registeredAt: string;
+      autoAttendanceEnabled: boolean;
+      lastSeenAt: string | null;
+      lastAccuracyM: number | null;
+      lastInsideState: boolean;
+    }[]
+  >([]);
+  const [nowTick, setNowTick] = useState(() => new Date());
+
+  useEffect(() => {
+    const t = window.setInterval(() => setNowTick(new Date()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
 
   // Leave form state
   const [leaveType, setLeaveType] = useState<LeaveRequest["type"]>("Annual Leave");
@@ -133,18 +213,61 @@ const EmployeePortal = () => {
     });
   };
 
-  // Device registration is automatic on first in-office evaluation.
+  const refreshMyDevices = async () => {
+    try {
+      const res = await attendanceApi.listDevices();
+      setMyDevices(res.devices || []);
+    } catch {
+      // ignore
+    }
+  };
 
-  const runAutoEvaluate = async () => {
+  const handleRegisterDevice = async () => {
     if (!user?.employeeId) return;
     try {
-      setEvaluatingAuto(true);
+      setRegisteringDevice(true);
       const geo = await getGeo();
-      const result = await attendanceApi.autoEvaluate({
+      await attendanceApi.registerDevice({
         deviceId,
+        deviceLabel: detectedDeviceLabel,
         lat: geo.lat,
         lng: geo.lng,
         accuracyM: geo.accuracyM,
+      });
+      await refreshMyDevices();
+      toast({
+        title: "Device registered",
+        description: `"${detectedDeviceLabel}" is now your attendance device.`,
+      });
+    } catch (e: any) {
+      toast({
+        title: "Registration failed",
+        description: e?.message || "Could not register this device.",
+        variant: "destructive",
+      });
+    } finally {
+      setRegisteringDevice(false);
+    }
+  };
+
+  const runAutoEvaluate = async () => {
+    if (!user?.employeeId) return;
+    setEvaluatingAuto(true);
+    // Try browser geolocation but NEVER make it a hard requirement — the
+    // server can also match on the office network IP, which is the only
+    // cross-browser, cross-device signal we can fully rely on.
+    let geo: { lat: number; lng: number; accuracyM: number } | null = null;
+    try {
+      geo = await getGeo();
+    } catch {
+      geo = null;
+    }
+    try {
+      const result = await attendanceApi.autoEvaluate({
+        deviceId,
+        ...(geo
+          ? { lat: geo.lat, lng: geo.lng, accuracyM: geo.accuracyM }
+          : {}),
       });
 
       setAttendanceStatus({
@@ -152,28 +275,30 @@ const EmployeePortal = () => {
         insideZoneId: result.insideZoneId,
         lastEvalAt: new Date().toISOString(),
         lastError: null,
-        lastAccuracyM: geo.accuracyM,
+        lastAccuracyM: geo?.accuracyM ?? null,
+        lastLat: geo?.lat ?? null,
+        lastLng: geo?.lng ?? null,
+        reason: result.reason ?? null,
+        matchedVia: result.matchedVia ?? null,
+        networkRecognized: !!result.network?.recognized,
+        nearestDistanceM: result.nearest?.distanceM ?? null,
+        nearestRadiusM: result.nearest?.radiusM ?? null,
+        nearestMaxAccuracyM: result.nearest?.maxAccuracyM ?? null,
       });
 
       if (result.action === "checked_in") {
-        toast({
-          title: "Checked in",
-          description: "Your attendance was checked in automatically.",
-        });
+        toast({ title: "Attendance checked" });
       } else if (result.action === "checked_out") {
-        toast({
-          title: "Checked out",
-          description: "Your attendance was checked out automatically.",
-        });
+        toast({ title: "Attendance closed" });
       }
 
-      // Refresh attendance list after changes
       try {
         const att = await attendanceApi.getByEmployee(user.employeeId);
         setMyAttendance(att.attendance || []);
       } catch {
         // ignore
       }
+      await refreshMyDevices();
     } catch (e: any) {
       setAttendanceStatus((s) => ({
         ...s,
@@ -187,31 +312,50 @@ const EmployeePortal = () => {
 
   useEffect(() => {
     if (!user?.employeeId) return;
-    if (activeSection !== "overview") return;
+    if (activeSection !== "overview" && activeSection !== "attendance") return;
     let cancelled = false;
-    let timer: number | undefined;
+    let checkoutTimer: number | undefined;
 
-    const tick = async () => {
-      if (cancelled) return;
-      // Load office config once per session on overview.
-      if (!officeLocation) {
-        try {
-          const res = await attendanceApi.getEmployeeOffice();
-          if (!cancelled) setOfficeLocation(res.location);
-        } catch {
-          // ignore
-        }
-      }
-      await runAutoEvaluate();
-      if (cancelled) return;
-      timer = window.setTimeout(tick, 60_000);
+    const msUntilCloseToday = (loc: OfficeLocationDto | null): number | null => {
+      if (!loc?.closeTime) return null;
+      const [hh, mm] = String(loc.closeTime).split(":").map((x) => Number(x));
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+      const now = new Date();
+      const target = new Date(now);
+      target.setHours(hh, mm, 5, 0);
+      const diff = target.getTime() - now.getTime();
+      return diff > 0 ? diff : null;
     };
 
-    // Run once on entering overview.
-    tick();
+    (async () => {
+      // Office config (cheap, load once per entry).
+      let loc = officeLocation;
+      if (!loc) {
+        try {
+          const res = await attendanceApi.getEmployeeOffice();
+          if (cancelled) return;
+          loc = res.location;
+          setOfficeLocation(res.location);
+        } catch {
+          // ignore — runAutoEvaluate will surface any real error.
+        }
+      }
+      // One evaluation on entry. No polling — the server captures the event
+      // the moment the employee is on the office network/GPS the first time.
+      await runAutoEvaluate();
+      if (cancelled) return;
+      // One final evaluation near the HR-set close time to auto-checkout.
+      const untilClose = msUntilCloseToday(loc);
+      if (untilClose != null) {
+        checkoutTimer = window.setTimeout(() => {
+          if (!cancelled) runAutoEvaluate();
+        }, untilClose);
+      }
+    })();
+
     return () => {
       cancelled = true;
-      if (timer) window.clearTimeout(timer);
+      if (checkoutTimer) window.clearTimeout(checkoutTimer);
     };
   }, [activeSection, user?.employeeId, officeLocation]);
 
@@ -260,6 +404,8 @@ const EmployeePortal = () => {
       setOfficeLocation(officeRes.location);
       const attRes = await attendanceApi.getByEmployee(user.employeeId);
       setMyAttendance(attRes.attendance || []);
+      const devRes = await attendanceApi.listDevices();
+      setMyDevices(devRes.devices || []);
     } catch (error) {
       console.error("Error loading employee data:", error);
       toast({
@@ -513,6 +659,7 @@ const EmployeePortal = () => {
               [
                 ["overview", "Overview", LayoutDashboard],
                 ["profile", "Profile", User],
+                ["attendance", "Attendance", Clock],
                 ["leave", "Leave", CalendarDays],
                 ["payroll", "Payroll", Wallet],
                 ["performance", "Performance", LineChart],
@@ -595,61 +742,143 @@ const EmployeePortal = () => {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Automatic Attendance</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <div className="space-y-1">
-                    <p className="font-medium">Attendance is automatic</p>
-                    <p className="text-xs text-muted-foreground">
-                      Device: <span className="font-mono">{deviceId.slice(0, 8)}…</span>
-                      {attendanceStatus.lastAccuracyM != null ? ` • GPS accuracy: ${attendanceStatus.lastAccuracyM}m` : ""}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Last check: {attendanceStatus.lastEvalAt ? new Date(attendanceStatus.lastEvalAt).toLocaleString() : "—"}
-                      {" • "}
-                      Status: {attendanceStatus.insideZoneId ? "In office zone" : "Outside office zone"}
-                    </p>
-                    {officeLocation ? (
-                      <p className="text-xs text-muted-foreground">
-                        Office: <span className="font-medium">{officeLocation.name}</span> • Hours{" "}
-                        {(officeLocation as any).openTime ?? "—"}-{(officeLocation as any).closeTime ?? "—"} • TZ{" "}
-                        {(officeLocation as any).timeZone ?? "—"}
+              <CardContent className="space-y-4">
+                {officeLocation ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-md border p-3 space-y-1">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <ClockIcon className="h-3.5 w-3.5" /> Office hours (set by HR)
+                      </div>
+                      <p className="font-medium">
+                        {(officeLocation as any).openTime || "—"} – {(officeLocation as any).closeTime || "—"}
                       </p>
-                    ) : (
                       <p className="text-xs text-muted-foreground">
-                        Office attendance is not configured yet by HR Admin.
+                        Time zone: {(officeLocation as any).timeZone || "—"}
                       </p>
-                    )}
-                    {attendanceStatus.lastError ? (
-                      <p className="text-xs text-destructive">{attendanceStatus.lastError}</p>
-                    ) : null}
+                      <p className="text-xs">
+                        Current time:{" "}
+                        <span className="font-mono font-medium">
+                          {(() => {
+                            try {
+                              return nowTick.toLocaleTimeString("en-GB", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                                hour12: false,
+                                timeZone: (officeLocation as any).timeZone || undefined,
+                              });
+                            } catch {
+                              return nowTick.toLocaleTimeString();
+                            }
+                          })()}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="rounded-md border p-3 space-y-1">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <MapPin className="h-3.5 w-3.5" /> Office location
+                      </div>
+                      <p className="font-medium">{officeLocation.name}</p>
+                      <p className="text-xs font-mono">
+                        {officeLocation.centerLat.toFixed(6)}, {officeLocation.centerLng.toFixed(6)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Radius: {officeLocation.radiusM}m • Max GPS accuracy: {officeLocation.maxAccuracyM}m
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button onClick={runAutoEvaluate} disabled={evaluatingAuto}>
-                      {evaluatingAuto ? "Checking..." : "Check now"}
-                    </Button>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Office attendance is not configured yet by HR Admin. Your check-in will start automatically once it is set up.
+                  </p>
+                )}
+
+                <div className="rounded-md border p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-medium">My device</p>
                   </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Note: Your browser will ask for location permission. For best results, turn on high-accuracy GPS and keep your
-                  connection active.
-                </p>
-                <div className="rounded-md border p-3">
-                  <p className="text-sm font-medium mb-2">My attendance (recent)</p>
-                  {myAttendance.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No attendance records yet.</p>
+                  {myDevices.length === 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        No device registered yet. We’ll use <span className="font-medium">{detectedDeviceLabel}</span> (your
+                        current login device) for attendance.
+                      </p>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <Button size="sm" onClick={handleRegisterDevice} disabled={registeringDevice}>
+                          {registeringDevice ? "Registering..." : `Register ${detectedDeviceLabel}`}
+                        </Button>
+                        {!isMobileDevice && (
+                          <span className="text-xs text-warning">
+                            Tip: a mobile phone is preferred so attendance works wherever you go.
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   ) : (
                     <div className="space-y-2">
-                      {myAttendance.slice(0, 7).map((r: any) => (
-                        <div key={r.id} className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">{r.date}</span>
-                          <span>
-                            {r.checkIn || "-"} → {r.checkOut || "-"} • <span className="font-medium">{r.status}</span>
-                          </span>
-                        </div>
-                      ))}
+                      {myDevices.map((d) => {
+                        const isCurrent = d.deviceId === deviceId;
+                        return (
+                          <div
+                            key={d.deviceId}
+                            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-xs"
+                          >
+                            <div>
+                              <span className="font-medium">{d.deviceLabel || "Registered device"}</span>
+                              {isCurrent && (
+                                <Badge variant="secondary" className="ml-2 bg-success/10 text-success border-0">
+                                  This device
+                                </Badge>
+                              )}
+                              {!d.autoAttendanceEnabled && (
+                                <Badge variant="secondary" className="ml-2 bg-destructive/10 text-destructive border-0">
+                                  Disabled
+                                </Badge>
+                              )}
+                            </div>
+                            <span className="text-muted-foreground">
+                              Last seen:{" "}
+                              {d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : "—"}
+                              {d.lastAccuracyM != null ? ` • ±${Math.round(d.lastAccuracyM)}m` : ""}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {!myDevices.some((d) => d.deviceId === deviceId) && (
+                        <Button size="sm" variant="outline" onClick={handleRegisterDevice} disabled={registeringDevice}>
+                          {registeringDevice ? "Registering..." : `Use ${detectedDeviceLabel} for attendance`}
+                        </Button>
+                      )}
                     </div>
                   )}
                 </div>
+
+                {(() => {
+                  const todayStr = new Date().toISOString().slice(0, 10);
+                  const todayRec = (myAttendance as any[]).find((r) => r.date === todayStr);
+                  const checkedIn = !!todayRec?.checkIn;
+                  const checkedOut = !!todayRec?.checkOut;
+                  return (
+                    <div className="rounded-md border p-3 flex items-center gap-2">
+                      <span
+                        aria-hidden
+                        className={`inline-block h-2.5 w-2.5 rounded-full ${
+                          checkedIn ? "bg-success" : "bg-muted-foreground/50"
+                        }`}
+                      />
+                      <p className="text-sm">
+                        {checkedOut
+                          ? `Attendance checked · ${todayRec.checkIn} → ${todayRec.checkOut}`
+                          : checkedIn
+                          ? `Attendance checked at ${todayRec.checkIn}`
+                          : officeLocation?.openTime && officeLocation?.closeTime
+                          ? `Auto-attendance active · office hours ${officeLocation.openTime}–${officeLocation.closeTime}`
+                          : "Auto-attendance active"}
+                      </p>
+                    </div>
+                  );
+                })()}
               </CardContent>
             </Card>
           </div>
@@ -814,6 +1043,108 @@ const EmployeePortal = () => {
                     )}
                   </div>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {activeSection === "attendance" && (
+          <Card>
+            <CardHeader>
+              <h3 className="text-base font-semibold">My attendance</h3>
+              <p className="text-sm text-muted-foreground">
+                Attendance is automatic — you are checked in as soon as you are at
+                the office during HR-set hours. No action needed.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {(() => {
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const todayRec = (myAttendance as any[]).find((r) => r.date === todayStr);
+                const checkedIn = !!todayRec?.checkIn;
+                const checkedOut = !!todayRec?.checkOut;
+                return (
+                  <div className="rounded-md border p-3 flex items-center gap-2">
+                    <span
+                      aria-hidden
+                      className={`inline-block h-2.5 w-2.5 rounded-full ${
+                        checkedIn ? "bg-success" : "bg-muted-foreground/50"
+                      }`}
+                    />
+                    <p className="text-sm">
+                      {checkedOut
+                        ? `Attendance checked · ${todayRec.checkIn} → ${todayRec.checkOut}`
+                        : checkedIn
+                        ? `Attendance checked at ${todayRec.checkIn}`
+                        : officeLocation?.openTime && officeLocation?.closeTime
+                        ? `Auto-attendance active · office hours ${officeLocation.openTime}–${officeLocation.closeTime}`
+                        : "Auto-attendance active"}
+                    </p>
+                  </div>
+                );
+              })()}
+
+              {officeLocation ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-md border p-3">
+                    <p className="text-xs text-muted-foreground">Office hours (set by HR)</p>
+                    <p className="text-sm font-medium">
+                      {officeLocation.openTime ?? "00:00"} – {officeLocation.closeTime ?? "23:59"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Time zone: {officeLocation.timeZone ?? "Africa/Lagos"}
+                    </p>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <p className="text-xs text-muted-foreground">Office location</p>
+                    <p className="text-sm font-medium">{officeLocation.name}</p>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="rounded-md border">
+                <div className="flex items-center justify-between p-3 border-b">
+                  <p className="text-sm font-medium">History</p>
+                  <p className="text-xs text-muted-foreground">{myAttendance.length} days</p>
+                </div>
+                {myAttendance.length === 0 ? (
+                  <p className="text-xs text-muted-foreground p-3">
+                    No attendance records yet. Your first day at the office will show here.
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Check in</TableHead>
+                        <TableHead>Check out</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(myAttendance as any[]).map((r) => (
+                        <TableRow key={r.id}>
+                          <TableCell className="text-sm">{r.date}</TableCell>
+                          <TableCell className="text-sm">{r.checkIn || "—"}</TableCell>
+                          <TableCell className="text-sm">{r.checkOut || "—"}</TableCell>
+                          <TableCell className="text-sm">
+                            <Badge
+                              variant={
+                                r.status === "Present"
+                                  ? "default"
+                                  : r.status === "Late"
+                                  ? "secondary"
+                                  : "outline"
+                              }
+                            >
+                              {r.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </div>
             </CardContent>
           </Card>

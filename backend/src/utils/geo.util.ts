@@ -63,14 +63,69 @@ export function isPointInsideGeofence(args: {
   return dist <= enterRadius;
 }
 
+export type GeoResolution = {
+  insideZoneId: string | null;
+  distanceM: number | null;
+  /** The closest configured geofence (regardless of inside/outside). */
+  nearestZoneId: string | null;
+  nearestZoneName: string | null;
+  nearestDistanceM: number | null;
+  nearestRadiusM: number | null;
+  nearestMaxAccuracyM: number | null;
+  /** Why we did not register the user as inside, when applicable. */
+  reason:
+    | "inside"
+    | "inside_via_ip"
+    | "inside_via_ssid"
+    | "no_zones"
+    | "accuracy_too_poor"
+    | "too_far"
+    | "no_fix";
+};
+
 export function resolveInsideGeofence(args: {
   point: GeoPoint;
   geofences: OfficeGeofence[];
   /** Previous inside-zone id to stabilize across multiple geofences. */
   previousZoneId?: string | null;
-}): { insideZoneId: string | null; distanceM: number | null } {
+}): GeoResolution {
   const { point, geofences, previousZoneId } = args;
-  if (!geofences || geofences.length === 0) return { insideZoneId: null, distanceM: null };
+  const emptyResolution: GeoResolution = {
+    insideZoneId: null,
+    distanceM: null,
+    nearestZoneId: null,
+    nearestZoneName: null,
+    nearestDistanceM: null,
+    nearestRadiusM: null,
+    nearestMaxAccuracyM: null,
+    reason: "no_zones",
+  };
+  if (!geofences || geofences.length === 0) return emptyResolution;
+
+  const accuracy = point.accuracyM ?? null;
+  const hasFix = accuracy !== null && Number.isFinite(accuracy);
+
+  // Nearest zone info regardless of inside/outside.
+  let nearest: { g: OfficeGeofence; dist: number } | null = null;
+  for (const g of geofences) {
+    const d = distanceMetersHaversine(point.lat, point.lng, g.centerLat, g.centerLng);
+    if (!nearest || d < nearest.dist) nearest = { g, dist: d };
+  }
+  const nearestInfo = nearest
+    ? {
+        nearestZoneId: nearest.g.id,
+        nearestZoneName: nearest.g.name,
+        nearestDistanceM: nearest.dist,
+        nearestRadiusM: nearest.g.radiusM,
+        nearestMaxAccuracyM: nearest.g.maxAccuracyM,
+      }
+    : {
+        nearestZoneId: null,
+        nearestZoneName: null,
+        nearestDistanceM: null,
+        nearestRadiusM: null,
+        nearestMaxAccuracyM: null,
+      };
 
   // If previously inside a zone, prefer staying in that zone if still inside.
   if (previousZoneId) {
@@ -78,7 +133,14 @@ export function resolveInsideGeofence(args: {
     if (prev) {
       const inside = isPointInsideGeofence({ point, geofence: prev, wasInside: true });
       const dist = distanceMetersHaversine(point.lat, point.lng, prev.centerLat, prev.centerLng);
-      if (inside) return { insideZoneId: prev.id, distanceM: dist };
+      if (inside) {
+        return {
+          insideZoneId: prev.id,
+          distanceM: dist,
+          ...nearestInfo,
+          reason: "inside",
+        };
+      }
     }
   }
 
@@ -89,6 +151,27 @@ export function resolveInsideGeofence(args: {
     const dist = distanceMetersHaversine(point.lat, point.lng, g.centerLat, g.centerLng);
     if (!best || dist < best.dist) best = { id: g.id, dist };
   }
-  return best ? { insideZoneId: best.id, distanceM: best.dist } : { insideZoneId: null, distanceM: null };
+  if (best) {
+    return {
+      insideZoneId: best.id,
+      distanceM: best.dist,
+      ...nearestInfo,
+      reason: "inside",
+    };
+  }
+
+  let reason: GeoResolution["reason"] = "too_far";
+  if (!hasFix) {
+    reason = "no_fix";
+  } else if (nearest && accuracy! > nearest.g.maxAccuracyM) {
+    reason = "accuracy_too_poor";
+  }
+
+  return {
+    insideZoneId: null,
+    distanceM: null,
+    ...nearestInfo,
+    reason,
+  };
 }
 

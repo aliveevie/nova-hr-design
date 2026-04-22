@@ -23,6 +23,8 @@ export type OfficeLocationRow = {
   close_time: string;
   time_zone: string;
   enabled: boolean;
+  allowed_ips: string[];
+  allowed_ssids: string[];
   created_at: string;
   updated_at: string;
 };
@@ -93,6 +95,37 @@ export const getAttendanceRecords = async (filters?: AttendanceFilters) => {
 
 export const getAttendanceByEmployee = async (employeeId: string) => {
   return getAttendanceRecords({ employeeId });
+};
+
+/**
+ * Fetches all attendance rows for a list of employees within a date range.
+ * Used by the admin report endpoint. Inclusive on both ends.
+ */
+export const getAttendanceInRangeForEmployees = async (
+  employeeIds: string[],
+  fromDate: string,
+  toDate: string
+) => {
+  if (employeeIds.length === 0) return [] as any[];
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    return (await sql`
+      select * from attendance
+       where employee_id = any(${employeeIds as any})
+         and date >= ${fromDate}
+         and date <= ${toDate}
+       order by date asc, employee_name asc
+    `) as any[];
+  }
+  await dbHelpers.read();
+  const db = getDatabase();
+  const set = new Set(employeeIds);
+  return [...(db.data.attendance || [])]
+    .filter(
+      (r: any) =>
+        set.has(r.employee_id) && r.date >= fromDate && r.date <= toDate
+    )
+    .sort((a: any, b: any) => a.date.localeCompare(b.date));
 };
 
 export const getAttendanceByDate = async (date: string) => {
@@ -267,10 +300,13 @@ export const listOfficeLocationsForAdmin = async (adminOwnerId: string): Promise
     );
   }
   const sql = getSql()!;
+  // Admin-configured entries first (most recently updated wins for the UI
+  // "active" slot). This prevents stale test data or older rows from
+  // masking the office the admin is actively editing.
   return sql`
     select * from office_locations
     where admin_owner_id = ${adminOwnerId}
-    order by created_at desc
+    order by updated_at desc, created_at desc
   ` as unknown as OfficeLocationRow[];
 };
 
@@ -289,13 +325,76 @@ export type UpsertOfficeLocationInput = {
   closeTime?: string;
   timeZone?: string;
   enabled?: boolean;
+  allowedIps?: string[];
+  allowedSsids?: string[];
+};
+
+export type UpdateOfficeHoursInput = {
+  id: string;
+  adminOwnerId: string;
+  openTime: string;
+  closeTime: string;
+  timeZone: string;
+};
+
+/**
+ * Targeted update for the hours block of a single office location. Scoped to
+ * the admin's ownership and does NOT touch geofence/IP/SSID fields so the
+ * admin can safely edit hours independently from location data.
+ */
+export const updateOfficeHours = async (
+  input: UpdateOfficeHoursInput
+): Promise<OfficeLocationRow | null> => {
+  if (!isSupabaseEnabled) {
+    await dbHelpers.read();
+    const db = getDatabase();
+    const list: any[] = ((db.data as any).officeLocations = (db.data as any).officeLocations || []);
+    const idx = list.findIndex(
+      (x: any) =>
+        String(x.id) === String(input.id) &&
+        String(x.admin_owner_id) === String(input.adminOwnerId)
+    );
+    if (idx < 0) return null;
+    list[idx].open_time = input.openTime;
+    list[idx].close_time = input.closeTime;
+    list[idx].time_zone = input.timeZone;
+    list[idx].updated_at = new Date().toISOString();
+    await dbHelpers.write();
+    return list[idx] as OfficeLocationRow;
+  }
+  const sql = getSql()!;
+  const [row] = await sql`
+    update office_locations
+       set open_time = ${input.openTime},
+           close_time = ${input.closeTime},
+           time_zone = ${input.timeZone},
+           updated_at = now()
+     where id = ${input.id}
+       and admin_owner_id = ${input.adminOwnerId}
+     returning *
+  `;
+  return (row as any) ?? null;
 };
 
 export const upsertOfficeLocation = async (input: UpsertOfficeLocationInput): Promise<OfficeLocationRow> => {
   const id = input.id || randomUUID();
+  const allowedIps = (input.allowedIps || [])
+    .map((x) => String(x).trim())
+    .filter((x) => x.length > 0);
+  const allowedSsids = (input.allowedSsids || [])
+    .map((x) => String(x).trim())
+    .filter((x) => x.length > 0);
   if (!isSupabaseEnabled) {
     await dbHelpers.read();
     const db = getDatabase();
+    // Enforce single office per admin: a brand-new upsert (no id passed)
+    // replaces any existing office owned by the same admin. This matches
+    // the product rule "one office at a time" and avoids stale duplicates.
+    if (!input.id) {
+      db.data.officeLocations = (db.data.officeLocations || []).filter(
+        (x: any) => String(x.admin_owner_id) !== String(input.adminOwnerId)
+      );
+    }
     const idx = (db.data.officeLocations || []).findIndex((x: any) => x.id === id);
     const row = {
       id,
@@ -312,6 +411,8 @@ export const upsertOfficeLocation = async (input: UpsertOfficeLocationInput): Pr
       close_time: input.closeTime ?? "23:59",
       time_zone: input.timeZone ?? "Africa/Lagos",
       enabled: input.enabled ?? true,
+      allowed_ips: allowedIps,
+      allowed_ssids: allowedSsids,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -322,10 +423,16 @@ export const upsertOfficeLocation = async (input: UpsertOfficeLocationInput): Pr
   }
 
   const sql = getSql()!;
+  // Enforce "one office per admin" on INSERT (no id supplied). Done in the
+  // same transaction so readers never see an empty state.
+  if (!input.id) {
+    await sql`delete from office_locations where admin_owner_id = ${input.adminOwnerId}`;
+  }
   const [row] = await sql`
     insert into office_locations (
       id, admin_owner_id, name, center_lat, center_lng, radius_m, max_accuracy_m,
-      entry_buffer_m, exit_buffer_m, exit_grace_seconds, open_time, close_time, time_zone, enabled
+      entry_buffer_m, exit_buffer_m, exit_grace_seconds, open_time, close_time, time_zone, enabled,
+      allowed_ips, allowed_ssids
     ) values (
       ${id},
       ${input.adminOwnerId},
@@ -340,7 +447,9 @@ export const upsertOfficeLocation = async (input: UpsertOfficeLocationInput): Pr
       ${input.openTime ?? "00:00"},
       ${input.closeTime ?? "23:59"},
       ${input.timeZone ?? "Africa/Lagos"},
-      ${input.enabled ?? true}
+      ${input.enabled ?? true},
+      ${allowedIps as any},
+      ${allowedSsids as any}
     )
     on conflict (id) do update set
       name = excluded.name,
@@ -355,6 +464,8 @@ export const upsertOfficeLocation = async (input: UpsertOfficeLocationInput): Pr
       close_time = excluded.close_time,
       time_zone = excluded.time_zone,
       enabled = excluded.enabled,
+      allowed_ips = excluded.allowed_ips,
+      allowed_ssids = excluded.allowed_ssids,
       updated_at = now()
     returning *
   `;
@@ -383,6 +494,28 @@ export type RegisterEmployeeDeviceInput = {
   accuracyM?: number | null;
   insideState?: boolean;
   insideZoneId?: string | null;
+};
+
+export const listEmployeeDevices = async (
+  employeeId: string
+): Promise<EmployeeDeviceRow[]> => {
+  if (!isSupabaseEnabled) {
+    await dbHelpers.read();
+    const db = getDatabase();
+    return (db.data.employeeDevices || [])
+      .filter((x: any) => x.employee_id === employeeId)
+      .sort((a: any, b: any) =>
+        new Date(b.last_seen_at || b.registered_at || 0).getTime() -
+        new Date(a.last_seen_at || a.registered_at || 0).getTime()
+      );
+  }
+  const sql = getSql()!;
+  const rows = await sql`
+    select * from employee_devices
+    where employee_id = ${employeeId}
+    order by coalesce(last_seen_at, registered_at) desc
+  `;
+  return rows as any;
 };
 
 export const getEmployeeDevice = async (

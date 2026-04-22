@@ -17,6 +17,11 @@ import publicRoutes from "./routes/public.routes.js";
 
 const app = express();
 
+// Trust the first reverse-proxy so `req.ip` reflects the real client IP
+// (Vercel, Nginx, Cloudflare, etc). This is essential for the office
+// IP allow-list used by auto-attendance.
+app.set("trust proxy", true);
+
 // Middleware - Allow multiple origins for development
 const allowedOrigins = [
   env.FRONTEND_URL,

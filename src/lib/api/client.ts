@@ -83,6 +83,13 @@ class ApiClient {
     return this.request<T>(endpoint, { method: "DELETE" });
   }
 
+  async patch<T>(endpoint: string, data?: any): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
   async getBlob(endpoint: string): Promise<Blob> {
     const token = this.getToken();
     const url = `${this.baseURL}${endpoint}`;
