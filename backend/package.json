@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "render-build": "npm install && npm run build",
+    "render-build": "npm install --include=dev && npm run build",
     "start": "node dist/server.js",
     "migrate": "tsx scripts/apply-schema.ts",
     "test:aiven": "tsx scripts/test-aiven.ts",
