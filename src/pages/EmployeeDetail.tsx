@@ -10,6 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useEmployees, useAttendance, usePayroll, usePerformance } from "@/lib/store";
 import { EmployeeForm } from "@/components/forms/EmployeeForm";
+import { FingerprintEnrollment } from "@/components/FingerprintEnrollment";
 import { useState } from "react";
 
 const statusClass: Record<string, string> = {
@@ -115,6 +116,7 @@ const EmployeeDetail = () => {
         <TabsList>
           <TabsTrigger value="personal">Personal Info</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
+          <TabsTrigger value="fingerprint">Fingerprint</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
           <TabsTrigger value="payroll">Payroll</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
@@ -181,6 +183,18 @@ const EmployeeDetail = () => {
               <p className="text-muted-foreground text-center py-8">No documents uploaded</p>
             )}
           </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="fingerprint">
+          <Card className="shadow-sm">
+            <CardContent className="p-6">
+              <h3 className="text-lg font-semibold mb-2">Fingerprint enrollment</h3>
+              <p className="text-sm text-muted-foreground mb-6">
+                Capture this employee&apos;s fingerprint on the U.are.U scanner connected to the backend machine.
+              </p>
+              <FingerprintEnrollment employeeId={employee.id} employeeName={employee.name} />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="attendance">

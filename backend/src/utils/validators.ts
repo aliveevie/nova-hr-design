@@ -126,6 +126,17 @@ export const officeHoursSchema = z.object({
   timeZone: z.string().min(1).max(64),
 });
 
+/** Simplified office settings — no geolocation. */
+export const officeSettingsSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().min(2).max(80),
+  openTime: z.string().regex(/^\d{2}:\d{2}$/, "Open time must be HH:MM"),
+  closeTime: z.string().regex(/^\d{2}:\d{2}$/, "Close time must be HH:MM"),
+  timeZone: z.string().min(1).max(64),
+  autoStartEnabled: z.boolean().optional(),
+  enabled: z.boolean().optional(),
+});
+
 /** Attendance report query params. Dates are ISO YYYY-MM-DD, inclusive. */
 export const attendanceReportQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "from must be YYYY-MM-DD"),

@@ -166,17 +166,51 @@ export const getUserById = async (userId: string) => {
 const hashResetToken = (token: string) =>
   crypto.createHash("sha256").update(token).digest("hex");
 
-export const requestPasswordReset = async (email: string) => {
+export type PasswordResetRequestResult =
+  | { kind: "created"; token: string; user: { id?: string; email: string; name: string } }
+  | { kind: "throttled"; user: { email: string; name: string }; retryAfterMinutes: number };
+
+const isResetTokenActive = (row: { used_at?: string | null; expires_at: string }) => {
+  if (row.used_at) return false;
+  return new Date(row.expires_at).getTime() > Date.now();
+};
+
+export const requestPasswordReset = async (email: string): Promise<PasswordResetRequestResult | null> => {
   const normalizedEmail = email.toLowerCase();
   const rawToken = crypto.randomBytes(32).toString("hex");
   const tokenHash = hashResetToken(rawToken);
-  const expiresAt = new Date(Date.now() + env.PASSWORD_RESET_TOKEN_TTL_MINUTES * 60 * 1000).toISOString();
+  const ttlMinutes = env.PASSWORD_RESET_TOKEN_TTL_MINUTES;
+  const cooldownMinutes = env.PASSWORD_RESET_COOLDOWN_MINUTES;
 
   if (isSupabaseEnabled) {
     const sql = getSql()!;
     const users = await sql`select id, email, name from users where lower(email) = ${normalizedEmail} limit 1`;
     const user = users[0];
     if (!user) return null;
+
+    const recent = await sql`
+      select id, created_at from password_reset_tokens
+      where user_id = ${user.id}
+        and used_at is null
+        and expires_at > now()
+      order by created_at desc
+      limit 1
+    `;
+    if (recent[0]) {
+      const createdMs = new Date(recent[0].created_at).getTime();
+      const cooldownMs = cooldownMinutes * 60 * 1000;
+      if (Date.now() - createdMs < cooldownMs) {
+        const retryAfterMinutes = Math.max(
+          1,
+          Math.ceil((cooldownMs - (Date.now() - createdMs)) / 60000)
+        );
+        return {
+          kind: "throttled",
+          user: { email: user.email, name: user.name },
+          retryAfterMinutes,
+        };
+      }
+    }
 
     await sql`
       update password_reset_tokens set used_at = now()
@@ -185,10 +219,14 @@ export const requestPasswordReset = async (email: string) => {
 
     await sql`
       insert into password_reset_tokens (user_id, token_hash, expires_at)
-      values (${user.id}, ${tokenHash}, ${expiresAt})
+      values (
+        ${user.id},
+        ${tokenHash},
+        now() + ${ttlMinutes} * interval '1 minute'
+      )
     `;
 
-    return { token: rawToken, user };
+    return { kind: "created", token: rawToken, user };
   }
 
   await dbHelpers.read();
@@ -200,7 +238,30 @@ export const requestPasswordReset = async (email: string) => {
     (db.data as any).passwordResetTokens = [];
   }
 
-  (db.data as any).passwordResetTokens = (db.data as any).passwordResetTokens.map((t: any) =>
+  const tokensList = ((db.data as any).passwordResetTokens || []) as any[];
+  const activeRecent = tokensList
+    .filter((t) => t.user_id === user.id && isResetTokenActive(t))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+  if (activeRecent) {
+    const createdMs = new Date(activeRecent.created_at).getTime();
+    const cooldownMs = cooldownMinutes * 60 * 1000;
+    if (Date.now() - createdMs < cooldownMs) {
+      const retryAfterMinutes = Math.max(
+        1,
+        Math.ceil((cooldownMs - (Date.now() - createdMs)) / 60000)
+      );
+      return {
+        kind: "throttled",
+        user: { email: user.email, name: user.name },
+        retryAfterMinutes,
+      };
+    }
+  }
+
+  const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000).toISOString();
+
+  (db.data as any).passwordResetTokens = tokensList.map((t: any) =>
     t.user_id === user.id && !t.used_at ? { ...t, used_at: new Date().toISOString() } : t
   );
 
@@ -214,7 +275,66 @@ export const requestPasswordReset = async (email: string) => {
   });
 
   await dbHelpers.write();
-  return { token: rawToken, user: { id: user.id, email: user.email, name: user.name } };
+  return {
+    kind: "created",
+    token: rawToken,
+    user: { id: user.id, email: user.email, name: user.name },
+  };
+};
+
+export const revokePasswordResetToken = async (rawToken: string) => {
+  const tokenHash = hashResetToken(rawToken);
+
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    await sql`
+      update password_reset_tokens set used_at = now()
+      where token_hash = ${tokenHash} and used_at is null
+    `;
+    return;
+  }
+
+  await dbHelpers.read();
+  const db = getDatabase();
+  const tokensList = ((db.data as any).passwordResetTokens || []) as any[];
+  for (const row of tokensList) {
+    if (row.token_hash === tokenHash && !row.used_at) {
+      row.used_at = new Date().toISOString();
+    }
+  }
+  await dbHelpers.write();
+};
+
+export const validateResetToken = async (
+  token: string
+): Promise<{ valid: boolean; reason?: "invalid" | "expired" | "used" }> => {
+  if (!token) return { valid: false, reason: "invalid" };
+  const tokenHash = hashResetToken(token);
+
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    const rows = await sql`
+      select used_at, expires_at from password_reset_tokens
+      where token_hash = ${tokenHash}
+      limit 1
+    `;
+    const row = rows[0];
+    if (!row) return { valid: false, reason: "invalid" };
+    if (row.used_at) return { valid: false, reason: "used" };
+    if (new Date(row.expires_at).getTime() <= Date.now()) {
+      return { valid: false, reason: "expired" };
+    }
+    return { valid: true };
+  }
+
+  await dbHelpers.read();
+  const db = getDatabase();
+  const tokensList = ((db.data as any).passwordResetTokens || []) as any[];
+  const row = tokensList.find((t) => t.token_hash === tokenHash);
+  if (!row) return { valid: false, reason: "invalid" };
+  if (row.used_at) return { valid: false, reason: "used" };
+  if (!isResetTokenActive(row)) return { valid: false, reason: "expired" };
+  return { valid: true };
 };
 
 export const resetPasswordWithToken = async (token: string, newPassword: string) => {
@@ -224,14 +344,14 @@ export const resetPasswordWithToken = async (token: string, newPassword: string)
     const sql = getSql()!;
 
     const tokens = await sql`
-      select id, user_id, expires_at, used_at from password_reset_tokens
-      where token_hash = ${tokenHash} limit 1
+      select id, user_id from password_reset_tokens
+      where token_hash = ${tokenHash}
+        and used_at is null
+        and expires_at > now()
+      limit 1
     `;
     const tokenRow = tokens[0];
-
-    if (!tokenRow || tokenRow.used_at || new Date(tokenRow.expires_at).getTime() < Date.now()) {
-      return false;
-    }
+    if (!tokenRow) return false;
 
     const newHash = await hashPassword(newPassword);
 
@@ -246,7 +366,7 @@ export const resetPasswordWithToken = async (token: string, newPassword: string)
   const tokensList = ((db.data as any).passwordResetTokens || []) as any[];
   const tokenRow = tokensList.find((t) => t.token_hash === tokenHash);
 
-  if (!tokenRow || tokenRow.used_at || new Date(tokenRow.expires_at).getTime() < Date.now()) {
+  if (!tokenRow || !isResetTokenActive(tokenRow)) {
     return false;
   }
 

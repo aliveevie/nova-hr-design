@@ -7,6 +7,11 @@ const toBool = (value: string | undefined, fallback = false) => {
   return value.toLowerCase() === "true";
 };
 
+/** How long a password-reset link stays valid (minutes). */
+export const PASSWORD_RESET_TOKEN_TTL_MINUTES = 120;
+/** Min minutes between reset emails for the same account. */
+export const PASSWORD_RESET_COOLDOWN_MINUTES = 5;
+
 export const env = {
   PORT: parseInt(process.env.PORT || "3001", 10),
   NODE_ENV: process.env.NODE_ENV || "development",
@@ -28,6 +33,7 @@ export const env = {
   AIVEN_DATABASE_URL: process.env.AIVEN_DATABASE_URL || "",
   AIVEN_CA_CERT: process.env.AIVEN_CA_CERT || "",
   AIVEN_CA_CERT_PATH: process.env.AIVEN_CA_CERT_PATH || "",
-  PASSWORD_RESET_TOKEN_TTL_MINUTES: parseInt(process.env.PASSWORD_RESET_TOKEN_TTL_MINUTES || "60", 10),
+  PASSWORD_RESET_TOKEN_TTL_MINUTES,
+  PASSWORD_RESET_COOLDOWN_MINUTES,
 };
 

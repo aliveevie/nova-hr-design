@@ -4,6 +4,8 @@ import {
   getUserById,
   requestPasswordReset,
   resetPasswordWithToken,
+  revokePasswordResetToken,
+  validateResetToken,
   changePassword,
   verifyFirstLoginToken,
 } from "../services/auth.service.js";
@@ -115,17 +117,58 @@ export const forgotPasswordController = async (req: Request, res: Response) => {
 
     const result = await requestPasswordReset(email);
 
-    if (result) {
-      const resetUrl = `${env.FRONTEND_URL}/reset-password?token=${result.token}`;
-      sendPasswordResetEmail(result.user.email, result.user.name, resetUrl, env.PASSWORD_RESET_TOKEN_TTL_MINUTES).catch((err) => {
-        console.error("Password reset email send error:", err);
+    if (result?.kind === "throttled") {
+      return res.json({
+        message:
+          "If the account exists, a reset link has already been sent recently. Check your inbox and spam folder, or wait a few minutes before requesting again.",
+        recentlySent: true,
+        retryAfterMinutes: result.retryAfterMinutes,
       });
     }
 
+    if (result?.kind === "created") {
+      const base = env.FRONTEND_URL.replace(/\/$/, "");
+      const resetUrl = `${base}/reset-password?token=${encodeURIComponent(result.token)}`;
+      const emailResult = await sendPasswordResetEmail(
+        result.user.email,
+        result.user.name,
+        resetUrl,
+        env.PASSWORD_RESET_TOKEN_TTL_MINUTES
+      );
+      if (!emailResult.success) {
+        await revokePasswordResetToken(result.token);
+        console.error("Password reset email failed to send for", result.user.email);
+      }
+    }
+
     // Do not reveal whether email exists
-    res.json({ message: "If the account exists, a reset link has been sent to the email." });
+    res.json({
+      message:
+        "If the account exists, a reset link has been sent to the email. Delivery can take a few minutes — check spam if you do not see it.",
+    });
   } catch (error) {
     console.error("Forgot password error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const validateResetTokenController = async (req: Request, res: Response) => {
+  try {
+    const token = String(req.query.token || "");
+    const result = await validateResetToken(token);
+    if (!result.valid) {
+      return res.status(400).json({
+        valid: false,
+        reason: result.reason || "invalid",
+        error: "Invalid or expired reset token",
+      });
+    }
+    return res.json({
+      valid: true,
+      expiresInMinutes: env.PASSWORD_RESET_TOKEN_TTL_MINUTES,
+    });
+  } catch (error) {
+    console.error("Validate reset token error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };

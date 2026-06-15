@@ -15,7 +15,11 @@ import {
   listOfficeLocationsForAdmin,
   registerEmployeeDevice,
   upsertOfficeLocation,
+  upsertOfficeSettings,
   updateEmployeeDeviceState,
+  getDailyAttendanceRoster,
+  startAttendanceSession,
+  stopAttendanceSession,
 } from "../services/attendance.service.js";
 import {
   attendanceSchema,
@@ -24,6 +28,7 @@ import {
   deviceRegisterSchema,
   officeHoursSchema,
   officeLocationSchema,
+  officeSettingsSchema,
 } from "../utils/validators.js";
 import { getHrAdminAllowedEmployeeIds } from "../utils/hr-admin-scope.util.js";
 import { canUserAccessEmployee } from "../utils/ownership-access.util.js";
@@ -31,6 +36,12 @@ import { resolveAdminOwnerForCreate, getEmployeeById } from "../services/employe
 import { resolveInsideGeofence } from "../utils/geo.util.js";
 import { getSourceIp, ipMatchesAllowlist, ssidMatchesAllowlist } from "../utils/ip.util.js";
 import { sendAttendanceCheckinEmail, sendAttendanceCheckoutEmail } from "../services/email.service.js";
+import {
+  isAttendanceOpenForCheckIn,
+  deriveLateStatus,
+  getDateInTimeZone,
+  computeAttendanceSessionState,
+} from "../utils/attendance-session.util.js";
 
 const toTimeHHMM = (d: Date) =>
   d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" });
@@ -129,29 +140,52 @@ export const getEmployeeAttendanceController = async (req: AuthRequest, res: Res
 
 export const checkInController = async (req: AuthRequest, res: Response) => {
   try {
+    if (req.user?.role === "HR Admin" || req.user?.role === "Manager") {
+      return res.status(403).json({
+        error: "Admins cannot check staff in manually. Use the fingerprint scanner.",
+      });
+    }
     const { employeeId } = req.body;
     const allowed = await canUserAccessEmployee(req, employeeId);
     if (!allowed) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    const today = new Date().toISOString().split("T")[0];
-    const now = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" });
 
-    // Check if already checked in today
+    const employee = await getEmployeeById(employeeId);
+    if (!employee) return res.status(404).json({ error: "Employee not found" });
+
+    const adminOwnerId = String((employee as any).admin_owner_id || "");
+    const offices = adminOwnerId ? await listOfficeLocationsForAdmin(adminOwnerId) : [];
+    const office = offices[0] ?? null;
+
+    if (office && !isAttendanceOpenForCheckIn(office)) {
+      return res.status(403).json({
+        error: "Attendance is not open. Ask your admin to start attendance or wait for office hours.",
+      });
+    }
+
+    const today = office
+      ? getDateInTimeZone(office.time_zone || "Africa/Lagos")
+      : new Date().toISOString().split("T")[0];
+    const now = new Date().toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
     const todayRecords = await getAttendanceByDate(today);
-    const existing = todayRecords.find(
-      (r: any) => r.employee_id === employeeId
-    );
+    const existing = todayRecords.find((r: any) => r.employee_id === employeeId);
 
     if (existing) {
       return res.status(400).json({ error: "Already checked in today" });
     }
 
+    const openTime = office?.open_time || "09:00";
     const record = await createAttendance({
       employeeId,
       date: today,
       checkIn: now,
-      status: now > "09:00" ? "Late" : "Present",
+      status: deriveLateStatus(now, openTime),
     });
 
     res.status(201).json({ attendance: record });
@@ -163,6 +197,11 @@ export const checkInController = async (req: AuthRequest, res: Response) => {
 
 export const checkOutController = async (req: AuthRequest, res: Response) => {
   try {
+    if (req.user?.role === "HR Admin" || req.user?.role === "Manager") {
+      return res.status(403).json({
+        error: "Admins cannot check staff out manually. Sign-out is automatic at close time.",
+      });
+    }
     const { employeeId } = req.body;
     const allowed = await canUserAccessEmployee(req, employeeId);
     if (!allowed) {
@@ -192,6 +231,11 @@ export const checkOutController = async (req: AuthRequest, res: Response) => {
 
 export const updateAttendanceController = async (req: AuthRequest, res: Response) => {
   try {
+    if (req.user?.role === "HR Admin" || req.user?.role === "Manager") {
+      return res.status(403).json({
+        error: "Admins cannot edit attendance records manually.",
+      });
+    }
     const { id } = req.params;
     const validation = attendanceSchema.partial().safeParse(req.body);
     if (!validation.success) {
@@ -235,64 +279,23 @@ export const listOfficeLocationsController = async (req: AuthRequest, res: Respo
   try {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
     const adminOwnerId = await resolveAdminOwnerForCreate(req.user.role, req.user.userId);
-    let rows = await listOfficeLocationsForAdmin(adminOwnerId);
-
-    // Zero-input auto-seed: on first admin visit, if the office has no IP
-    // allow-list yet, silently seed it with the admin's current public IP.
-    // This is safe (no-op once populated) and means the admin never has to
-    // click a button for cross-browser check-in to work.
-    const currentIp = getSourceIp(req);
-    if (
-      rows.length === 1 &&
-      (!(rows[0] as any).allowed_ips || (rows[0] as any).allowed_ips.length === 0) &&
-      currentIp
-    ) {
-      try {
-        const r = rows[0] as any;
-        await upsertOfficeLocation({
-          id: r.id,
-          adminOwnerId,
-          name: r.name,
-          centerLat: Number(r.center_lat),
-          centerLng: Number(r.center_lng),
-          radiusM: Number(r.radius_m),
-          maxAccuracyM: Number(r.max_accuracy_m),
-          entryBufferM: Number(r.entry_buffer_m || 0),
-          exitBufferM: Number(r.exit_buffer_m || 0),
-          exitGraceSeconds: Number(r.exit_grace_seconds || 300),
-          openTime: r.open_time ?? "00:00",
-          closeTime: r.close_time ?? "23:59",
-          timeZone: r.time_zone ?? "Africa/Lagos",
-          enabled: !!r.enabled,
-          allowedIps: [currentIp],
-          allowedSsids: r.allowed_ssids ?? [],
-        });
-        rows = await listOfficeLocationsForAdmin(adminOwnerId);
-      } catch (seedErr) {
-        console.error("auto-seed allowed_ips failed:", seedErr);
-      }
-    }
+    const rows = await listOfficeLocationsForAdmin(adminOwnerId);
 
     const locations = rows.map((r) => ({
       id: r.id,
       name: r.name,
-      centerLat: r.center_lat,
-      centerLng: r.center_lng,
-      radiusM: r.radius_m,
-      maxAccuracyM: r.max_accuracy_m,
-      entryBufferM: r.entry_buffer_m,
-      exitBufferM: r.exit_buffer_m,
-      exitGraceSeconds: r.exit_grace_seconds,
-      openTime: (r as any).open_time ?? "00:00",
-      closeTime: (r as any).close_time ?? "23:59",
+      openTime: (r as any).open_time ?? "09:00",
+      closeTime: (r as any).close_time ?? "17:00",
       timeZone: (r as any).time_zone ?? "Africa/Lagos",
       enabled: r.enabled,
-      allowedIps: (r as any).allowed_ips ?? [],
-      allowedSsids: (r as any).allowed_ssids ?? [],
+      autoStartEnabled: (r as any).auto_start_enabled !== false,
+      sessionOpen: !!(r as any).session_open,
+      sessionDate: (r as any).session_date ?? null,
+      sessionStartedAt: (r as any).session_started_at ?? null,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     }));
-    return res.json({ locations, currentIp });
+    return res.json({ locations });
   } catch (e) {
     console.error("listOfficeLocationsController:", e);
     return res.status(500).json({ error: "Internal server error" });
@@ -520,35 +523,25 @@ export const getEmployeeOfficeLocationController = async (req: AuthRequest, res:
     const loc = enabled[0] || null;
     if (!loc) return res.json({ location: null });
 
-    const currentIp = getSourceIp(req);
-    const ipOnNetwork = ipMatchesAllowlist(currentIp, (loc as any).allowed_ips ?? []);
+    const session = computeAttendanceSessionState(
+      loc,
+      getDateInTimeZone(loc.time_zone || "Africa/Lagos")
+    );
+
     return res.json({
       location: {
         id: loc.id,
         name: loc.name,
-        centerLat: loc.center_lat,
-        centerLng: loc.center_lng,
-        radiusM: loc.radius_m,
-        maxAccuracyM: loc.max_accuracy_m,
-        entryBufferM: loc.entry_buffer_m,
-        exitBufferM: loc.exit_buffer_m,
-        exitGraceSeconds: loc.exit_grace_seconds,
-        openTime: (loc as any).open_time ?? "00:00",
-        closeTime: (loc as any).close_time ?? "23:59",
+        openTime: (loc as any).open_time ?? "09:00",
+        closeTime: (loc as any).close_time ?? "17:00",
         timeZone: (loc as any).time_zone ?? "Africa/Lagos",
         enabled: loc.enabled,
-        // Tell the employee client whether their current network is already
-        // recognised as an office network. The admin's IP list is *not*
-        // exposed — employees only see a boolean.
-        networkRecognized: ipOnNetwork,
-        // SSIDs are non-sensitive network names the admin publishes so the
-        // employee can pick "which office Wi-Fi am I on?". Exposing them is
-        // required for the one-click selector in the portal.
-        allowedSsids: ((loc as any).allowed_ssids ?? []) as string[],
+        autoStartEnabled: (loc as any).auto_start_enabled !== false,
+        sessionIsOpen: session.isOpen,
+        sessionOpen: !!(loc as any).session_open,
         createdAt: loc.created_at,
         updatedAt: loc.updated_at,
       },
-      currentIp,
     });
   } catch (e) {
     console.error("getEmployeeOfficeLocationController:", e);
@@ -675,6 +668,133 @@ export const autoEvaluateAttendanceController = async (req: AuthRequest, res: Re
     const adminOwnerId = String((emp as any)?.admin_owner_id || "");
     if (!adminOwnerId) return res.status(400).json({ error: "Employee is missing admin owner scope" });
 
+    const officeRows = await listOfficeLocationsForAdmin(adminOwnerId);
+    const office = officeRows.find((x) => x.enabled) ?? null;
+    const now = new Date();
+
+    // Session-based attendance (no geolocation): when the admin has opened
+    // attendance (manually or via auto-start at office hours), employees
+    // check in by visiting the portal or calling this endpoint.
+    if (office) {
+      const today = getDateInTimeZone(office.time_zone || "Africa/Lagos", now);
+      const todays = await getAttendanceRecords({ employeeId, date: today });
+      const existing = (todays as any[])[0] || null;
+      const t = toTimeHHMM(now);
+      const openTime = office.open_time || "09:00";
+      const closeMin = parseHHMM(office.close_time || "17:00");
+      const nowMin = getNowMinutesInTimeZone(office.time_zone || "Africa/Lagos", now);
+      const pastClose = nowMin != null && closeMin != null && nowMin >= closeMin;
+
+      if (!isAttendanceOpenForCheckIn(office) && !pastClose) {
+        return res.json({
+          action: "none",
+          insideZoneId: null,
+          matchedVia: "none",
+          reason: "session_closed",
+          attendance: existing
+            ? {
+                id: existing.id,
+                employeeId: existing.employee_id,
+                employee: existing.employee_name,
+                date: existing.date,
+                checkIn: existing.check_in,
+                checkOut: existing.check_out,
+                status: existing.status,
+                department: existing.department,
+              }
+            : null,
+        });
+      }
+
+      if (isAttendanceOpenForCheckIn(office) && !existing) {
+        const attendanceRow = await createAttendance({
+          employeeId,
+          date: today,
+          checkIn: t,
+          status: deriveLateStatus(t, openTime),
+          source: "auto",
+          deviceId: v.data.deviceId,
+        });
+        try {
+          await sendAttendanceCheckinEmail({
+            to: String((emp as any)?.email || ""),
+            name: String((emp as any)?.name || "Employee"),
+            date: today,
+            checkInTime: t,
+            locationName: office.name || "Office",
+          });
+        } catch (e) {
+          console.error("attendance notification failed:", e);
+        }
+        return res.json({
+          action: "checked_in",
+          insideZoneId: office.id,
+          matchedVia: "session",
+          reason: "session_open",
+          attendance: {
+            id: attendanceRow.id,
+            employeeId: attendanceRow.employee_id,
+            employee: attendanceRow.employee_name,
+            date: attendanceRow.date,
+            checkIn: attendanceRow.check_in,
+            checkOut: attendanceRow.check_out,
+            status: attendanceRow.status,
+            department: attendanceRow.department,
+          },
+        });
+      }
+
+      if (existing && !existing.check_out && pastClose) {
+        const attendanceRow = await updateAttendance(existing.id, { checkOut: t });
+        try {
+          await sendAttendanceCheckoutEmail({
+            to: String((emp as any)?.email || ""),
+            name: String((emp as any)?.name || "Employee"),
+            date: today,
+            checkOutTime: t,
+            locationName: office.name || "Office",
+          });
+        } catch (e) {
+          console.error("attendance notification failed:", e);
+        }
+        return res.json({
+          action: "checked_out",
+          insideZoneId: office.id,
+          matchedVia: "session",
+          reason: "session_close",
+          attendance: {
+            id: attendanceRow?.id || existing.id,
+            employeeId: existing.employee_id,
+            employee: existing.employee_name,
+            date: existing.date,
+            checkIn: existing.check_in,
+            checkOut: attendanceRow?.check_out || t,
+            status: existing.status,
+            department: existing.department,
+          },
+        });
+      }
+
+      if (existing) {
+        return res.json({
+          action: "none",
+          insideZoneId: office.id,
+          matchedVia: "session",
+          reason: "already_checked_in",
+          attendance: {
+            id: existing.id,
+            employeeId: existing.employee_id,
+            employee: existing.employee_name,
+            date: existing.date,
+            checkIn: existing.check_in,
+            checkOut: existing.check_out,
+            status: existing.status,
+            department: existing.department,
+          },
+        });
+      }
+    }
+
     const allGeos = (await listOfficeLocationsForAdmin(adminOwnerId))
       .filter((x) => x.enabled)
       .map((g) => ({
@@ -738,7 +858,6 @@ export const autoEvaluateAttendanceController = async (req: AuthRequest, res: Re
       ? "ssid"
       : "none";
     const newInside = !!resolvedZoneId;
-    const now = new Date();
     const nowIso = now.toISOString();
 
     // Track when inside/outside state changed to enforce exit grace.
@@ -909,6 +1028,104 @@ export const autoEvaluateAttendanceController = async (req: AuthRequest, res: Re
     });
   } catch (e) {
     console.error("autoEvaluateAttendanceController:", e);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const getDailyAttendanceController = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const date =
+      (typeof req.query.date === "string" && req.query.date) ||
+      new Date().toISOString().slice(0, 10);
+    const department =
+      typeof req.query.department === "string" ? req.query.department : undefined;
+
+    const adminOwnerId = await resolveAdminOwnerForCreate(req.user.role, req.user.userId);
+    const data = await getDailyAttendanceRoster(adminOwnerId, date, department);
+    return res.json(data);
+  } catch (e) {
+    console.error("getDailyAttendanceController:", e);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const upsertOfficeSettingsController = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const v = officeSettingsSchema.safeParse(req.body);
+    if (!v.success) {
+      return res.status(400).json({ error: "Invalid data", details: v.error.flatten() });
+    }
+    const adminOwnerId = await resolveAdminOwnerForCreate(req.user.role, req.user.userId);
+    const row = await upsertOfficeSettings({
+      id: v.data.id,
+      adminOwnerId,
+      name: v.data.name,
+      openTime: v.data.openTime,
+      closeTime: v.data.closeTime,
+      timeZone: v.data.timeZone,
+      autoStartEnabled: v.data.autoStartEnabled,
+      enabled: v.data.enabled,
+    });
+    return res.status(201).json({
+      location: {
+        id: row.id,
+        name: row.name,
+        openTime: (row as any).open_time,
+        closeTime: (row as any).close_time,
+        timeZone: (row as any).time_zone,
+        autoStartEnabled: (row as any).auto_start_enabled !== false,
+        enabled: row.enabled,
+        updatedAt: row.updated_at,
+      },
+    });
+  } catch (e) {
+    console.error("upsertOfficeSettingsController:", e);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const startAttendanceSessionController = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const adminOwnerId = await resolveAdminOwnerForCreate(req.user.role, req.user.userId);
+    const row = await startAttendanceSession(adminOwnerId, req.user.userId);
+    if (!row) {
+      return res.status(400).json({ error: "Save office settings before starting attendance." });
+    }
+    const date = getDateInTimeZone(row.time_zone || "Africa/Lagos");
+    const roster = await getDailyAttendanceRoster(adminOwnerId, date);
+    return res.json({
+      success: true,
+      message: "Attendance started for today.",
+      session: roster.session,
+      office: roster.office,
+    });
+  } catch (e) {
+    console.error("startAttendanceSessionController:", e);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const stopAttendanceSessionController = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const adminOwnerId = await resolveAdminOwnerForCreate(req.user.role, req.user.userId);
+    const row = await stopAttendanceSession(adminOwnerId);
+    if (!row) {
+      return res.status(400).json({ error: "No office configured." });
+    }
+    const date = getDateInTimeZone(row.time_zone || "Africa/Lagos");
+    const roster = await getDailyAttendanceRoster(adminOwnerId, date);
+    return res.json({
+      success: true,
+      message: "Manual attendance session stopped. Auto-start may still apply during office hours.",
+      session: roster.session,
+      office: roster.office,
+    });
+  } catch (e) {
+    console.error("stopAttendanceSessionController:", e);
     return res.status(500).json({ error: "Internal server error" });
   }
 };

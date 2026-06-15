@@ -11,4 +11,5 @@ export * from "./discipline.api.js";
 export * from "./holiday.api.js";
 export * from "./invite.api.js";
 export * from "./publicInvite.api.js";
+export * from "./fingerprint.api.js";
 

@@ -15,6 +15,10 @@ import {
   upsertOfficeLocationController,
   updateOfficeHoursController,
   getAttendanceReportController,
+  getDailyAttendanceController,
+  upsertOfficeSettingsController,
+  startAttendanceSessionController,
+  stopAttendanceSessionController,
 } from "../controllers/attendance.controller.js";
 import { authenticate, enforceEmployeeAccess, requireRole } from "../middleware/auth.middleware.js";
 
@@ -33,6 +37,10 @@ router.patch(
 );
 router.delete("/offices/:id", requireRole("HR Admin", "Manager"), deleteOfficeLocationController);
 router.get("/report", requireRole("HR Admin", "Manager"), getAttendanceReportController);
+router.get("/daily", requireRole("HR Admin", "Manager"), getDailyAttendanceController);
+router.post("/offices/settings", requireRole("HR Admin", "Manager"), upsertOfficeSettingsController);
+router.post("/session/start", requireRole("HR Admin", "Manager"), startAttendanceSessionController);
+router.post("/session/stop", requireRole("HR Admin", "Manager"), stopAttendanceSessionController);
 router.get("/office", requireRole("Employee"), getEmployeeOfficeLocationController);
 router.post("/checkin", checkInController);
 router.post("/checkout", checkOutController);

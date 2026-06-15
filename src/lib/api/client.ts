@@ -45,9 +45,11 @@ class ApiClient {
       const apiError = new Error(error.error || `HTTP error! status: ${response.status}`) as Error & {
         details?: unknown;
         status?: number;
+        code?: string;
       };
       apiError.details = error;
       apiError.status = response.status;
+      apiError.code = error.code;
       throw apiError;
     }
 
@@ -101,9 +103,11 @@ class ApiClient {
       const apiError = new Error(error.error || `HTTP error! status: ${response.status}`) as Error & {
         details?: unknown;
         status?: number;
+        code?: string;
       };
       apiError.details = error;
       apiError.status = response.status;
+      apiError.code = error.code;
       throw apiError;
     }
     return response.blob();

@@ -14,6 +14,7 @@ import disciplineRoutes from "./routes/discipline.routes.js";
 import holidayRoutes from "./routes/holiday.routes.js";
 import inviteRoutes from "./routes/invite.routes.js";
 import publicRoutes from "./routes/public.routes.js";
+import fingerprintRoutes from "./routes/fingerprint.routes.js";
 
 const app = express();
 
@@ -62,6 +63,7 @@ app.use("/api/performance", performanceRoutes);
 app.use("/api/training", trainingRoutes);
 app.use("/api/discipline", disciplineRoutes);
 app.use("/api/holidays", holidayRoutes);
+app.use("/api/fingerprint", fingerprintRoutes);
 
 // Health check
 app.get("/health", (req, res) => {

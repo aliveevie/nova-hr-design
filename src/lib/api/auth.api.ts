@@ -47,8 +47,19 @@ export const authApi = {
     return apiClient.get<{ user: AuthResponse["user"] }>("/auth/me");
   },
 
-  forgotPassword: async (email: string): Promise<{ message: string }> => {
-    return apiClient.post<{ message: string }>("/auth/forgot-password", { email });
+  forgotPassword: async (email: string): Promise<{ message: string; recentlySent?: boolean; retryAfterMinutes?: number }> => {
+    return apiClient.post<{ message: string; recentlySent?: boolean; retryAfterMinutes?: number }>(
+      "/auth/forgot-password",
+      { email }
+    );
+  },
+
+  validateResetToken: async (
+    token: string
+  ): Promise<{ valid: boolean; reason?: string; expiresInMinutes?: number }> => {
+    return apiClient.get<{ valid: boolean; reason?: string; expiresInMinutes?: number }>(
+      `/auth/reset-password/validate?token=${encodeURIComponent(token)}`
+    );
   },
 
   resetPassword: async (token: string, password: string): Promise<{ message: string }> => {

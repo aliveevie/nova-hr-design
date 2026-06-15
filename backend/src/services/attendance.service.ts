@@ -1,10 +1,18 @@
 import { getDatabase, dbHelpers } from "../config/database.js";
 import { randomUUID } from "crypto";
 import { getSql, isSupabaseEnabled } from "../config/supabase.js";
-import { getEmployeeById } from "./employee.service.js";
+import { getEmployeeById, getAllEmployees } from "./employee.service.js";
+import {
+  computeAttendanceSessionState,
+  getDateInTimeZone,
+  parseHHMM,
+  getNowMinutesInTimeZone,
+  DEFAULT_CLOSE_TIME,
+  DEFAULT_TIME_ZONE,
+} from "../utils/attendance-session.util.js";
 
 type AttendanceStatus = "Present" | "Late" | "Absent" | "On Leave";
-type AttendanceSource = "manual" | "auto";
+type AttendanceSource = "manual" | "auto" | "fingerprint";
 
 export type AttendanceFilters = { employeeId?: string; date?: string };
 
@@ -25,6 +33,11 @@ export type OfficeLocationRow = {
   enabled: boolean;
   allowed_ips: string[];
   allowed_ssids: string[];
+  auto_start_enabled?: boolean;
+  session_date?: string | null;
+  session_open?: boolean;
+  session_started_at?: string | null;
+  session_started_by?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -327,6 +340,7 @@ export type UpsertOfficeLocationInput = {
   enabled?: boolean;
   allowedIps?: string[];
   allowedSsids?: string[];
+  autoStartEnabled?: boolean;
 };
 
 export type UpdateOfficeHoursInput = {
@@ -407,12 +421,13 @@ export const upsertOfficeLocation = async (input: UpsertOfficeLocationInput): Pr
       entry_buffer_m: input.entryBufferM ?? 0,
       exit_buffer_m: input.exitBufferM ?? 0,
       exit_grace_seconds: input.exitGraceSeconds ?? 300,
-      open_time: input.openTime ?? "00:00",
-      close_time: input.closeTime ?? "23:59",
+      open_time: input.openTime ?? "09:00",
+      close_time: input.closeTime ?? "17:00",
       time_zone: input.timeZone ?? "Africa/Lagos",
       enabled: input.enabled ?? true,
       allowed_ips: allowedIps,
       allowed_ssids: allowedSsids,
+      auto_start_enabled: input.autoStartEnabled ?? true,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -432,7 +447,7 @@ export const upsertOfficeLocation = async (input: UpsertOfficeLocationInput): Pr
     insert into office_locations (
       id, admin_owner_id, name, center_lat, center_lng, radius_m, max_accuracy_m,
       entry_buffer_m, exit_buffer_m, exit_grace_seconds, open_time, close_time, time_zone, enabled,
-      allowed_ips, allowed_ssids
+      allowed_ips, allowed_ssids, auto_start_enabled
     ) values (
       ${id},
       ${input.adminOwnerId},
@@ -444,12 +459,13 @@ export const upsertOfficeLocation = async (input: UpsertOfficeLocationInput): Pr
       ${input.entryBufferM ?? 0},
       ${input.exitBufferM ?? 0},
       ${input.exitGraceSeconds ?? 300},
-      ${input.openTime ?? "00:00"},
-      ${input.closeTime ?? "23:59"},
+      ${input.openTime ?? "09:00"},
+      ${input.closeTime ?? "17:00"},
       ${input.timeZone ?? "Africa/Lagos"},
       ${input.enabled ?? true},
       ${allowedIps as any},
-      ${allowedSsids as any}
+      ${allowedSsids as any},
+      ${input.autoStartEnabled ?? true}
     )
     on conflict (id) do update set
       name = excluded.name,
@@ -466,6 +482,7 @@ export const upsertOfficeLocation = async (input: UpsertOfficeLocationInput): Pr
       enabled = excluded.enabled,
       allowed_ips = excluded.allowed_ips,
       allowed_ssids = excluded.allowed_ssids,
+      auto_start_enabled = excluded.auto_start_enabled,
       updated_at = now()
     returning *
   `;
@@ -659,3 +676,262 @@ export const updateEmployeeDeviceState = async (input: UpdateEmployeeDeviceState
   `;
   return (row as any) || null;
 };
+
+export type UpsertOfficeSettingsInput = {
+  id?: string;
+  adminOwnerId: string;
+  name: string;
+  openTime: string;
+  closeTime: string;
+  timeZone: string;
+  autoStartEnabled?: boolean;
+  enabled?: boolean;
+};
+
+export const upsertOfficeSettings = async (
+  input: UpsertOfficeSettingsInput
+): Promise<OfficeLocationRow> => {
+  const existingList = await listOfficeLocationsForAdmin(input.adminOwnerId);
+  const existing = input.id
+    ? existingList.find((x) => String(x.id) === String(input.id))
+    : existingList[0];
+
+  const row = await upsertOfficeLocation({
+    id: input.id || existing?.id,
+    adminOwnerId: input.adminOwnerId,
+    name: input.name,
+    centerLat: existing?.center_lat ?? 0,
+    centerLng: existing?.center_lng ?? 0,
+    radiusM: existing?.radius_m ?? 100,
+    maxAccuracyM: existing?.max_accuracy_m ?? 200,
+    exitGraceSeconds: existing?.exit_grace_seconds ?? 300,
+    openTime: input.openTime,
+    closeTime: input.closeTime,
+    timeZone: input.timeZone,
+    enabled: input.enabled ?? true,
+    allowedIps: existing?.allowed_ips ?? [],
+    allowedSsids: existing?.allowed_ssids ?? [],
+    autoStartEnabled: input.autoStartEnabled,
+  });
+  return row;
+};
+
+export const startAttendanceSession = async (
+  adminOwnerId: string,
+  startedByUserId: string
+): Promise<OfficeLocationRow | null> => {
+  const offices = await listOfficeLocationsForAdmin(adminOwnerId);
+  const office = offices[0];
+  if (!office) return null;
+
+  const tz = office.time_zone || "Africa/Lagos";
+  const today = getDateInTimeZone(tz);
+
+  if (!isSupabaseEnabled) {
+    await dbHelpers.read();
+    const db = getDatabase();
+    const idx = (db.data.officeLocations || []).findIndex(
+      (x: any) => String(x.id) === String(office.id)
+    );
+    if (idx < 0) return null;
+    (db.data.officeLocations as any[])[idx] = {
+      ...(db.data.officeLocations as any[])[idx],
+      session_open: true,
+      session_date: today,
+      session_started_at: new Date().toISOString(),
+      session_started_by: startedByUserId,
+      updated_at: new Date().toISOString(),
+    };
+    await dbHelpers.write();
+    return (db.data.officeLocations as any[])[idx];
+  }
+
+  const sql = getSql()!;
+  const [row] = await sql`
+    update office_locations set
+      session_open = true,
+      session_date = ${today},
+      session_started_at = now(),
+      session_started_by = ${startedByUserId},
+      updated_at = now()
+    where id = ${office.id} and admin_owner_id = ${adminOwnerId}
+    returning *
+  `;
+  return (row as any) ?? null;
+};
+
+export const stopAttendanceSession = async (
+  adminOwnerId: string
+): Promise<OfficeLocationRow | null> => {
+  const offices = await listOfficeLocationsForAdmin(adminOwnerId);
+  const office = offices[0];
+  if (!office) return null;
+
+  if (!isSupabaseEnabled) {
+    await dbHelpers.read();
+    const db = getDatabase();
+    const idx = (db.data.officeLocations || []).findIndex(
+      (x: any) => String(x.id) === String(office.id)
+    );
+    if (idx < 0) return null;
+    (db.data.officeLocations as any[])[idx] = {
+      ...(db.data.officeLocations as any[])[idx],
+      session_open: false,
+      updated_at: new Date().toISOString(),
+    };
+    await dbHelpers.write();
+    return (db.data.officeLocations as any[])[idx];
+  }
+
+  const sql = getSql()!;
+  const [row] = await sql`
+    update office_locations set
+      session_open = false,
+      updated_at = now()
+    where id = ${office.id} and admin_owner_id = ${adminOwnerId}
+    returning *
+  `;
+  return (row as any) ?? null;
+};
+
+export const getDailyAttendanceRoster = async (
+  adminOwnerId: string,
+  date: string,
+  department?: string
+) => {
+  await autoCheckoutOpenAttendanceForAdmin(adminOwnerId);
+
+  const offices = await listOfficeLocationsForAdmin(adminOwnerId);
+  const office = offices[0] ?? null;
+  const session = computeAttendanceSessionState(office, date);
+
+  // Only staff who checked in via fingerprint scanner on this date.
+  let records: any[] = [];
+  if (isSupabaseEnabled) {
+    const sql = getSql()!;
+    const deptNorm = department && department !== "all" ? department.toLowerCase() : null;
+    if (deptNorm) {
+      records = await sql`
+        select a.*, e.name as employee_name, e.department as employee_department
+        from attendance a
+        inner join employees e on e.id = a.employee_id
+        where e.admin_owner_id = ${adminOwnerId}
+          and a.date = ${date}
+          and a.source = 'fingerprint'
+          and lower(coalesce(e.department, '')) = ${deptNorm}
+        order by a.check_in asc nulls last, e.name asc
+      `;
+    } else {
+      records = await sql`
+        select a.*, e.name as employee_name, e.department as employee_department
+        from attendance a
+        inner join employees e on e.id = a.employee_id
+        where e.admin_owner_id = ${adminOwnerId}
+          and a.date = ${date}
+          and a.source = 'fingerprint'
+        order by a.check_in asc nulls last, e.name asc
+      `;
+    }
+  } else {
+    await dbHelpers.read();
+    const db = getDatabase();
+    const deptNorm = department && department !== "all" ? department.toLowerCase() : null;
+    const emps = (db.data.employees || []).filter(
+      (e: any) =>
+        String(e.admin_owner_id) === String(adminOwnerId) &&
+        (!deptNorm || String(e.department || "").toLowerCase() === deptNorm)
+    );
+    const empIds = new Set(emps.map((e: any) => String(e.id)));
+    records = (db.data.attendance || [])
+      .filter(
+        (a: any) =>
+          empIds.has(String(a.employee_id)) &&
+          a.date === date &&
+          a.source === "fingerprint"
+      )
+      .map((a: any) => {
+        const emp = emps.find((e: any) => String(e.id) === String(a.employee_id));
+        return { ...a, employee_name: emp?.name, employee_department: emp?.department };
+      });
+  }
+
+  let present = 0;
+  let late = 0;
+
+  const roster = records.map((rec: any) => {
+    const checkIn = rec.check_in || null;
+    const checkOut = rec.check_out || null;
+    const st = rec.status === "Late" ? "Late" : "Present";
+    if (st === "Late") late++;
+    else present++;
+
+    return {
+      employeeId: String(rec.employee_id),
+      name: String(rec.employee_name || rec.employee || ""),
+      department: String(rec.employee_department || rec.department || ""),
+      attendanceId: String(rec.id),
+      checkIn,
+      checkOut,
+      status: st,
+      source: "fingerprint",
+    };
+  });
+
+  return {
+    date,
+    session,
+    office: office
+      ? {
+          id: office.id,
+          name: office.name,
+          openTime: office.open_time,
+          closeTime: office.close_time,
+          timeZone: office.time_zone,
+          autoStartEnabled: office.auto_start_enabled !== false,
+          sessionOpen: !!office.session_open,
+          sessionDate: office.session_date ?? null,
+        }
+      : null,
+    stats: { present, late, absent: 0, onLeave: 0, yet: 0 },
+    employees: roster,
+  };
+};
+
+/**
+ * At or after office close time, check out any employee still open for today.
+ */
+export const autoCheckoutOpenAttendanceForAdmin = async (
+  adminOwnerId: string,
+  now = new Date()
+): Promise<{ checkedOut: number; date: string }> => {
+  const offices = await listOfficeLocationsForAdmin(adminOwnerId);
+  const office = offices[0] ?? null;
+  const tz = office?.time_zone || DEFAULT_TIME_ZONE;
+  const today = getDateInTimeZone(tz, now);
+  const closeTime = office?.close_time || DEFAULT_CLOSE_TIME;
+  const closeMin = parseHHMM(closeTime);
+  const nowMin = getNowMinutesInTimeZone(tz, now);
+
+  if (closeMin == null || nowMin == null || nowMin < closeMin) {
+    return { checkedOut: 0, date: today };
+  }
+
+  const employees = await getAllEmployees(undefined, { hrAdminUserId: adminOwnerId });
+  const ids = (employees as any[]).map((e) => String(e.id));
+  if (ids.length === 0) return { checkedOut: 0, date: today };
+
+  const records = await getAttendanceInRangeForEmployees(ids, today, today);
+  let checkedOut = 0;
+
+  for (const rec of records as any[]) {
+    const hasIn = rec.check_in && String(rec.check_in).trim() !== "";
+    const hasOut = rec.check_out && String(rec.check_out).trim() !== "";
+    if (hasIn && !hasOut) {
+      await updateAttendance(String(rec.id), { checkOut: closeTime });
+      checkedOut++;
+    }
+  }
+
+  return { checkedOut, date: today };
+};
+

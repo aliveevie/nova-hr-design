@@ -16,7 +16,7 @@ import { employeeApi, leaveApi, payrollApi, performanceApi, trainingApi, discipl
 import { Employee, LeaveRequest, Payroll, Performance, Training, Discipline } from "@/types";
 import { calculateLeaveDays } from "@/lib/utils/leaveUtils";
 import { useHoliday } from "@/lib/store";
-import { attendanceApi, OfficeLocationDto } from "@/lib/api/attendance.api";
+import { attendanceApi, OfficeSettingsDto } from "@/lib/api/attendance.api";
 import {
   Printer,
   Plus,
@@ -145,7 +145,7 @@ const EmployeePortal = () => {
   });
   const [evaluatingAuto, setEvaluatingAuto] = useState(false);
   const [registeringDevice, setRegisteringDevice] = useState(false);
-  const [officeLocation, setOfficeLocation] = useState<OfficeLocationDto | null>(null);
+  const [officeLocation, setOfficeLocation] = useState<OfficeSettingsDto | null>(null);
   // Historical note: an earlier iteration let employees pick their office
   // Wi-Fi. That was removed per product feedback — attendance must be
   // hands-off. Any legacy selection in localStorage is cleared on mount so
@@ -196,22 +196,6 @@ const EmployeePortal = () => {
     }
   }, [user]);
 
-  const getGeo = async (): Promise<{ lat: number; lng: number; accuracyM: number }> => {
-    if (!navigator.geolocation) throw new Error("Geolocation is not supported on this device.");
-    return new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          resolve({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracyM: Math.round(pos.coords.accuracy || 0),
-          });
-        },
-        () => reject(new Error("Location permission denied. Please allow location access.")),
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-      );
-    });
-  };
 
   const refreshMyDevices = async () => {
     try {
@@ -226,13 +210,9 @@ const EmployeePortal = () => {
     if (!user?.employeeId) return;
     try {
       setRegisteringDevice(true);
-      const geo = await getGeo();
       await attendanceApi.registerDevice({
         deviceId,
         deviceLabel: detectedDeviceLabel,
-        lat: geo.lat,
-        lng: geo.lng,
-        accuracyM: geo.accuracyM,
       });
       await refreshMyDevices();
       toast({
@@ -253,31 +233,17 @@ const EmployeePortal = () => {
   const runAutoEvaluate = async () => {
     if (!user?.employeeId) return;
     setEvaluatingAuto(true);
-    // Try browser geolocation but NEVER make it a hard requirement — the
-    // server can also match on the office network IP, which is the only
-    // cross-browser, cross-device signal we can fully rely on.
-    let geo: { lat: number; lng: number; accuracyM: number } | null = null;
     try {
-      geo = await getGeo();
-    } catch {
-      geo = null;
-    }
-    try {
-      const result = await attendanceApi.autoEvaluate({
-        deviceId,
-        ...(geo
-          ? { lat: geo.lat, lng: geo.lng, accuracyM: geo.accuracyM }
-          : {}),
-      });
+      const result = await attendanceApi.autoEvaluate({ deviceId });
 
       setAttendanceStatus({
         lastAction: result.action,
-        insideZoneId: result.insideZoneId,
+        insideZoneId: null,
         lastEvalAt: new Date().toISOString(),
         lastError: null,
-        lastAccuracyM: geo?.accuracyM ?? null,
-        lastLat: geo?.lat ?? null,
-        lastLng: geo?.lng ?? null,
+        lastAccuracyM: null,
+        lastLat: null,
+        lastLng: null,
         reason: result.reason ?? null,
         matchedVia: result.matchedVia ?? null,
         networkRecognized: !!result.network?.recognized,
@@ -316,7 +282,7 @@ const EmployeePortal = () => {
     let cancelled = false;
     let checkoutTimer: number | undefined;
 
-    const msUntilCloseToday = (loc: OfficeLocationDto | null): number | null => {
+    const msUntilCloseToday = (loc: OfficeSettingsDto | null): number | null => {
       if (!loc?.closeTime) return null;
       const [hh, mm] = String(loc.closeTime).split(":").map((x) => Number(x));
       if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
@@ -776,14 +742,17 @@ const EmployeePortal = () => {
                     </div>
                     <div className="rounded-md border p-3 space-y-1">
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <MapPin className="h-3.5 w-3.5" /> Office location
+                        <ClockIcon className="h-3.5 w-3.5" /> Attendance status
                       </div>
                       <p className="font-medium">{officeLocation.name}</p>
-                      <p className="text-xs font-mono">
-                        {officeLocation.centerLat.toFixed(6)}, {officeLocation.centerLng.toFixed(6)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Radius: {officeLocation.radiusM}m • Max GPS accuracy: {officeLocation.maxAccuracyM}m
+                      <p className="text-xs">
+                        {officeLocation.sessionIsOpen ? (
+                          <span className="text-success">Attendance is open — you can check in</span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            Attendance is closed until your admin starts it or office hours begin
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
