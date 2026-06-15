@@ -4,6 +4,7 @@
     "module": "Node16",
     "lib": ["ES2020"],
     "moduleResolution": "node16",
+    "rootDir": "./src",
     "outDir": "./dist",
     "strict": true,
     "esModuleInterop": true,
@@ -14,7 +15,7 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["src/**/*", "api/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
 
