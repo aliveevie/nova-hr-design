@@ -226,7 +226,15 @@ export const requestPasswordReset = async (email: string): Promise<PasswordReset
       )
     `;
 
-    return { kind: "created", token: rawToken, user };
+    return {
+      kind: "created",
+      token: rawToken,
+      user: {
+        id: String(user.id),
+        email: String(user.email),
+        name: String(user.name),
+      },
+    };
   }
 
   await dbHelpers.read();
