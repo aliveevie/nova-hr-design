@@ -1,0 +1,10 @@
+node_modules
+dist
+database
+.env
+.env.*
+*.log
+.DS_Store
+.git
+api
+fingerprint-matcher/target

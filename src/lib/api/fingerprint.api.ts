@@ -62,7 +62,7 @@ export type EmployeeTemplatesResponse = {
 };
 
 export const fingerprintApi = {
-  getStatus: async (): Promise<{ available: boolean; device_name?: string; error?: string }> => {
+  getStatus: async (): Promise<{ available: boolean; engine?: string; error?: string }> => {
     return apiClient.get("/fingerprint/status");
   },
 
@@ -80,7 +80,7 @@ export const fingerprintApi = {
 
   enrollEmployee: async (
     employeeId: string,
-    body: { fingerPosition: string; scannerLabel?: string }
+    body: { fingerPosition: string; scannerLabel?: string; imageB64: string; dpi?: number }
   ): Promise<EnrollResult> => {
     return apiClient.post(`/fingerprint/employees/${employeeId}/enroll`, body);
   },
@@ -89,8 +89,12 @@ export const fingerprintApi = {
     return apiClient.delete(`/fingerprint/templates/${templateId}`);
   },
 
-  scanAttendance: async (scannerId?: string): Promise<FingerprintScanResult> => {
-    return apiClient.post("/fingerprint/attendance/scan", { scannerId });
+  scanAttendance: async (body: {
+    imageB64: string;
+    scannerId?: string;
+    dpi?: number;
+  }): Promise<FingerprintScanResult> => {
+    return apiClient.post("/fingerprint/attendance/scan", body);
   },
 
   listAttendanceLogs: async (date?: string): Promise<{ logs: any[] }> => {

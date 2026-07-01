@@ -24,6 +24,10 @@
 
   <body>
     <div id="root"></div>
+    <!-- HID DigitalPersona WebSDK: bridges the browser to the locally-installed
+         DigitalPersona client so fingerprint readers work from the web page.
+         Must load as a global script (not an ES import). -->
+    <script src="/vendor/websdk.client.ui.min.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

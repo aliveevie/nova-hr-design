@@ -43,6 +43,51 @@ npm run build
 npm start
 ```
 
+## Fingerprint attendance (DigitalPersona U.are.U + SourceAFIS)
+
+The fingerprint flow is designed so end users **only install the free
+DigitalPersona driver/client once** on their own Windows PC and then simply
+visit the web app — no local server, no Docker, nothing else running on their
+device.
+
+How it works:
+
+1. **User device:** install the free
+   [HID Authentication Device Client ("Lite Client")](https://digitalpersona.hidglobal.com/lite-client/)
+   once. It bundles the USB driver plus a background Windows service that lets
+   browsers talk to the reader. (This is the "driver" users remember installing.)
+2. **Browser:** the web app loads the DigitalPersona WebSDK and captures the
+   fingerprint **as a PNG image** in the page (`SampleFormat.PngImage`).
+3. **This backend (cloud, e.g. Render):** receives the PNG, extracts a template
+   and runs 1:N matching with the open-source **SourceAFIS** engine, then
+   records attendance. All matching happens server-side, so the reader can be
+   on any user's device while the backend runs in the cloud.
+
+### Server requirements
+
+The matcher is a small Java program (`backend/fingerprint-matcher`) built into
+a fat jar and invoked by Node. The provided `Dockerfile` builds this jar and
+ships a headless JRE alongside Node, so **deploy the backend as a Docker
+service** (Render supports Docker deploys):
+
+- `FINGERPRINT_MATCHER_JAR` — path to the jar (set automatically in the image).
+- `FINGERPRINT_DPI` — reader DPI used for extraction (default `500`).
+- `FINGERPRINT_MATCH_THRESHOLD` — SourceAFIS score threshold (default `40`).
+- `JAVA_BIN` — java binary (default `java`, on `PATH` in the image).
+
+Apply the additive DB migration once:
+
+```bash
+npm run migrate:sourceafis
+```
+
+For local (non-Docker) dev of fingerprint matching you need Java 17+ installed
+and the jar built:
+
+```bash
+cd fingerprint-matcher && mvn package    # produces target/fingerprint-matcher.jar
+```
+
 ## Local Test Data Cleanup (dev only)
 
 To clear local JSON test data safely:

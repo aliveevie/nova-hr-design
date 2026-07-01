@@ -136,9 +136,12 @@ export const listEmployeeTemplatesController = async (req: AuthRequest, res: Res
 export const enrollEmployeeFingerprintController = async (req: AuthRequest, res: Response) => {
   try {
     const { employeeId } = req.params;
-    const { fingerPosition, scannerLabel } = req.body;
+    const { fingerPosition, scannerLabel, imageB64, dpi } = req.body;
     if (!fingerPosition) {
       return res.status(400).json({ error: "fingerPosition is required" });
+    }
+    if (!imageB64) {
+      return res.status(400).json({ error: "imageB64 (captured fingerprint) is required" });
     }
 
     const emp = await getEmployeeById(employeeId);
@@ -152,6 +155,8 @@ export const enrollEmployeeFingerprintController = async (req: AuthRequest, res:
       fingerPosition,
       enrolledByUserId: getAdminOwnerId(req),
       scannerLabel,
+      imageB64,
+      dpi: typeof dpi === "number" ? dpi : undefined,
     });
 
     const fingerMeta = RECOMMENDED_FINGER_POSITIONS.find((f) => f.value === fingerPosition);
@@ -181,11 +186,14 @@ export const enrollEmployeeFingerprintController = async (req: AuthRequest, res:
     if (msg.includes("already has") || msg.includes("already enrolled")) {
       return res.status(409).json({ error: msg, code: "DUPLICATE_ENROLLMENT" });
     }
-    if (msg.includes("capture") || msg.includes("scanner") || msg.includes("bridge")) {
+    if (msg.includes("matching engine") || msg.includes("matcher")) {
       return res.status(503).json({
-        error: "Fingerprint scanner unavailable. Attach the reader and ensure the bridge is running on this machine.",
+        error: "Fingerprint matching engine unavailable on the server.",
         details: msg,
       });
+    }
+    if (msg.includes("read the fingerprint") || msg.includes("No fingerprint image")) {
+      return res.status(422).json({ error: msg, code: "CAPTURE_FAILED" });
     }
     res.status(500).json({ error: msg || "Internal server error" });
   }
@@ -205,10 +213,15 @@ export const deactivateTemplateController = async (req: AuthRequest, res: Respon
 
 export const scanAttendanceController = async (req: AuthRequest, res: Response) => {
   try {
-    const { scannerId } = req.body;
+    const { scannerId, imageB64, dpi } = req.body;
+    if (!imageB64) {
+      return res.status(400).json({ error: "imageB64 (captured fingerprint) is required", code: "NO_IMAGE" });
+    }
     const result = await processFingerprintAttendanceScan({
       adminOwnerId: getAdminOwnerId(req),
       scannerId: scannerId ?? null,
+      imageB64,
+      dpi: typeof dpi === "number" ? dpi : undefined,
     });
     res.json(result);
   } catch (e: any) {
@@ -220,8 +233,8 @@ export const scanAttendanceController = async (req: AuthRequest, res: Response) 
       });
     }
     const msg = String(e?.message || "");
-    if (msg.includes("scanner") || msg.includes("bridge")) {
-      return res.status(503).json({ error: msg, code: "SCANNER_UNAVAILABLE" });
+    if (msg.includes("matcher") || msg.includes("engine")) {
+      return res.status(503).json({ error: msg, code: "MATCHER_UNAVAILABLE" });
     }
     res.status(400).json({ error: msg || "Scan failed", code: "SCAN_FAILED" });
   }

@@ -31,6 +31,12 @@ import {
   EnrollmentOverviewEmployee,
   FingerprintTemplate,
 } from "@/lib/api/fingerprint.api";
+import {
+  captureFingerprintImage,
+  listReaders,
+  FingerprintReaderError,
+  LITE_CLIENT_DOWNLOAD_URL,
+} from "@/lib/fingerprintReader";
 
 type Props = {
   /** When set, skip employee picker (e.g. Employee detail tab). */
@@ -57,8 +63,9 @@ export const FingerprintEnrollmentWizard = ({
   title = "Fingerprint enrollment",
 }: Props) => {
   const { toast } = useToast();
-  const [scannerAvailable, setScannerAvailable] = useState<boolean | null>(null);
-  const [deviceName, setDeviceName] = useState<string | null>(null);
+  const [readerAvailable, setReaderAvailable] = useState<boolean | null>(null);
+  const [matcherAvailable, setMatcherAvailable] = useState<boolean | null>(null);
+  const [needsClient, setNeedsClient] = useState(false);
   const [overview, setOverview] = useState<EnrollmentOverviewEmployee[]>([]);
   const [recommended, setRecommended] = useState<RecommendedFinger[]>([]);
   const [maxFingers, setMaxFingers] = useState(3);
@@ -85,10 +92,26 @@ export const FingerprintEnrollmentWizard = ({
     return overview.find((e) => e.employeeId === selectedEmployeeId) ?? null;
   }, [presetEmployeeId, presetEmployeeName, overview, selectedEmployeeId, templates, maxFingers]);
 
+  const scannerAvailable =
+    readerAvailable === null || matcherAvailable === null
+      ? null
+      : readerAvailable && matcherAvailable;
+
   const loadScanner = async () => {
-    const status = await fingerprintApi.getStatus();
-    setScannerAvailable(status.available);
-    setDeviceName(status.device_name ?? null);
+    try {
+      const readers = await listReaders();
+      setReaderAvailable(readers.length > 0);
+      setNeedsClient(false);
+    } catch (e) {
+      setReaderAvailable(false);
+      if (e instanceof FingerprintReaderError && e.code === "NO_CLIENT") setNeedsClient(true);
+    }
+    try {
+      const status = await fingerprintApi.getStatus();
+      setMatcherAvailable(status.available);
+    } catch {
+      setMatcherAvailable(false);
+    }
   };
 
   const loadOverview = async () => {
@@ -157,9 +180,10 @@ export const FingerprintEnrollmentWizard = ({
     setEnrolling(true);
     setLastSuccess(null);
     try {
+      const { imageB64 } = await captureFingerprintImage();
       const res = await fingerprintApi.enrollEmployee(empId, {
         fingerPosition: nextFinger.value,
-        scannerLabel: deviceName ?? undefined,
+        imageB64,
       });
       setLastSuccess(res.fingerLabel || nextFinger.label);
       toast({
@@ -173,9 +197,18 @@ export const FingerprintEnrollmentWizard = ({
         onComplete?.();
       }
     } catch (e: any) {
+      if (e instanceof FingerprintReaderError) {
+        if (e.code === "NO_CLIENT") setNeedsClient(true);
+        toast({
+          title: "Reader problem",
+          description: e.message,
+          variant: "destructive",
+        });
+        return;
+      }
       toast({
         title: "Enrollment failed",
-        description: e.message || "Keep finger on scanner until capture completes.",
+        description: e.message || "Keep the finger on the reader until capture completes.",
         variant: "destructive",
       });
     } finally {
@@ -190,18 +223,29 @@ export const FingerprintEnrollmentWizard = ({
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <Fingerprint className="h-4 w-4 text-primary" />
-        {scannerAvailable === null && <span className="text-muted-foreground">Checking scanner…</span>}
-        {scannerAvailable === true && (
-          <span className="text-success">
-            Scanner ready{deviceName ? ` · ${deviceName}` : ""}
-          </span>
+        {scannerAvailable === null && <span className="text-muted-foreground">Checking reader…</span>}
+        {scannerAvailable === true && <span className="text-success">Reader ready on this device</span>}
+        {scannerAvailable === false && matcherAvailable === false && (
+          <span className="text-destructive">Server fingerprint engine unavailable.</span>
         )}
-        {scannerAvailable === false && (
-          <span className="text-destructive">
-            Scanner unavailable — backend must run on the PC with the USB reader.
-          </span>
+        {scannerAvailable === false && matcherAvailable !== false && !needsClient && (
+          <span className="text-destructive">No fingerprint reader detected on this device.</span>
         )}
       </div>
+
+      {needsClient && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 space-y-2">
+          <p>
+            Install the free DigitalPersona client once on this device, then plug in the reader and
+            reload this page to enroll fingerprints.
+          </p>
+          <Button asChild variant="outline" size="sm">
+            <a href={LITE_CLIENT_DOWNLOAD_URL} target="_blank" rel="noreferrer">
+              Download DigitalPersona client
+            </a>
+          </Button>
+        </div>
+      )}
 
       {step === "pick-employee" && !presetEmployeeId && (
         <div className="space-y-3">
@@ -302,7 +346,7 @@ export const FingerprintEnrollmentWizard = ({
                 {enrolling ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Place finger on scanner now…
+                    Place finger on reader now…
                   </>
                 ) : (
                   <>

@@ -9,13 +9,17 @@ import {
   autoCheckoutOpenAttendanceForAdmin,
 } from "./attendance.service.js";
 import {
-  captureFingerprintTemplate,
-  identifyFingerprint,
-  getScannerBridgeStatus,
   MAX_FINGERS_PER_EMPLOYEE,
   RECOMMENDED_FINGER_POSITIONS,
   FINGER_POSITIONS,
 } from "../utils/fingerprintBridge.util.js";
+import {
+  extractTemplateFromImage,
+  identifyAgainstGallery,
+  getMatcherStatus,
+  FINGERPRINT_DPI,
+  SOURCEAFIS_TEMPLATE_FORMAT,
+} from "../utils/sourceafisBridge.util.js";
 import {
   isFingerprintScanAllowed,
   deriveLateStatus,
@@ -144,9 +148,21 @@ export const enrollEmployeeFingerprint = async (input: {
   fingerPosition: string;
   enrolledByUserId: string;
   scannerLabel?: string | null;
+  /**
+   * PNG fingerprint image (base64) captured in the browser via the
+   * DigitalPersona WebSDK. The server extracts a SourceAFIS template from it —
+   * this is what lets the reader live on any user's device while the backend
+   * (and matching) runs in the cloud.
+   */
+  imageB64: string;
+  dpi?: number;
 }) => {
   const employee = await getEmployeeById(input.employeeId);
   if (!employee) throw new Error("Employee not found");
+
+  if (!input.imageB64) {
+    throw new Error("No fingerprint image was captured. Place the finger on the reader and retry.");
+  }
 
   const existing = await listEmployeeFingerprintTemplates(input.employeeId);
   if (existing.length >= MAX_FINGERS_PER_EMPLOYEE) {
@@ -162,15 +178,21 @@ export const enrollEmployeeFingerprint = async (input: {
     throw new Error(`Finger "${input.fingerPosition}" is already enrolled for this employee.`);
   }
 
-  const captured = await captureFingerprintTemplate(input.fingerPosition);
-  if (!captured.success) {
-    throw new Error(captured.error || "Fingerprint capture failed");
+  const dpi = input.dpi ?? FINGERPRINT_DPI;
+  const extracted = await extractTemplateFromImage(input.imageB64, dpi);
+  if (!extracted.success) {
+    throw new Error(
+      extracted.error === "matcher_unavailable"
+        ? "Fingerprint matching engine unavailable on the server."
+        : "Could not read the fingerprint. Press firmly and centered, then retry."
+    );
   }
 
   if (!isSupabaseEnabled) throw new Error("Fingerprint enrollment requires database");
 
   const sql = getSql()!;
-  const templateBytes = Buffer.from(captured.template_b64, "base64");
+  const templateBytes = Buffer.from(extracted.template_b64, "base64");
+  const imageBytes = Buffer.from(input.imageB64, "base64");
 
   const [row] = await sql`
     insert into employee_fingerprint_templates (
@@ -178,15 +200,19 @@ export const enrollEmployeeFingerprint = async (input: {
       finger_position,
       template_format,
       template_data,
+      fingerprint_image,
+      image_dpi,
       scanner_label,
       enrolled_by_user_id,
       is_active
     ) values (
       ${input.employeeId},
       ${input.fingerPosition},
-      'libfprint-2',
+      ${SOURCEAFIS_TEMPLATE_FORMAT},
       ${templateBytes},
-      ${input.scannerLabel ?? captured.device_name ?? null},
+      ${imageBytes},
+      ${dpi},
+      ${input.scannerLabel ?? null},
       ${input.enrolledByUserId},
       true
     )
@@ -194,6 +220,8 @@ export const enrollEmployeeFingerprint = async (input: {
     do update set
       template_data = excluded.template_data,
       template_format = excluded.template_format,
+      fingerprint_image = excluded.fingerprint_image,
+      image_dpi = excluded.image_dpi,
       scanner_label = excluded.scanner_label,
       enrolled_by_user_id = excluded.enrolled_by_user_id,
       is_active = true,
@@ -221,7 +249,7 @@ export const enrollEmployeeFingerprint = async (input: {
 
   return {
     template: row,
-    deviceName: captured.device_name,
+    deviceName: input.scannerLabel ?? null,
     enrolledCount: newCount,
     maxFingers: MAX_FINGERS_PER_EMPLOYEE,
     isFullyEnrolled: newCount >= MAX_FINGERS_PER_EMPLOYEE,
@@ -251,12 +279,15 @@ export const deactivateFingerprintTemplate = async (
 const loadTemplatesForAdmin = async (adminOwnerId: string) => {
   if (!isSupabaseEnabled) return [];
   const sql = getSql()!;
+  // Only SourceAFIS templates are matchable by the server-side engine. Legacy
+  // libfprint rows (if any) are ignored — those employees simply re-enroll.
   return sql`
     select t.id, t.employee_id, t.finger_position, t.template_data, e.name as employee_name
     from employee_fingerprint_templates t
     inner join employees e on e.id = t.employee_id
     where e.admin_owner_id = ${adminOwnerId}
       and t.is_active = true
+      and t.template_format = ${SOURCEAFIS_TEMPLATE_FORMAT}
       and e.status = 'Active'
   `;
 };
@@ -295,7 +326,18 @@ export const logFingerprintEvent = async (data: {
 export const processFingerprintAttendanceScan = async (input: {
   adminOwnerId: string;
   scannerId?: string | null;
+  /** PNG fingerprint image (base64) captured in the browser via WebSDK. */
+  imageB64: string;
+  dpi?: number;
 }) => {
+  if (!input.imageB64) {
+    throw new FingerprintScanError(
+      "No fingerprint image was captured. Place the finger on the reader and retry.",
+      "NO_IMAGE",
+      400
+    );
+  }
+
   await autoCheckoutOpenAttendanceForAdmin(input.adminOwnerId);
 
   const offices = await listOfficeLocationsForAdmin(input.adminOwnerId);
@@ -326,7 +368,9 @@ export const processFingerprintAttendanceScan = async (input: {
     template_b64: Buffer.from(t.template_data).toString("base64"),
   }));
 
-  const match = await identifyFingerprint(gallery);
+  const match = await identifyAgainstGallery(input.imageB64, gallery, {
+    dpi: input.dpi ?? FINGERPRINT_DPI,
+  });
   if (!match.success) {
     await logFingerprintEvent({
       adminOwnerId: input.adminOwnerId,
@@ -381,7 +425,7 @@ export const processFingerprintAttendanceScan = async (input: {
       scannerId: input.scannerId ?? null,
       adminOwnerId: input.adminOwnerId,
       eventType: "check_in",
-      matchScore: match.match_score,
+      matchScore: match.score,
       attendanceId: String(existing.id),
       attendanceDate: today,
       message: `Already checked in at ${existing.check_in}`,
@@ -391,7 +435,7 @@ export const processFingerprintAttendanceScan = async (input: {
       employeeName: String((employee as any).name || ""),
       eventType: "check_in" as const,
       attendanceId: String(existing.id),
-      matchScore: match.match_score,
+      matchScore: match.score,
       message: `Already checked in at ${existing.check_in}. You will be signed out automatically at ${closeTime}.`,
       alreadyCheckedIn: true,
     };
@@ -425,7 +469,7 @@ export const processFingerprintAttendanceScan = async (input: {
     scannerId: input.scannerId ?? null,
     adminOwnerId: input.adminOwnerId,
     eventType: "check_in",
-    matchScore: match.match_score,
+    matchScore: match.score,
     attendanceId,
     attendanceDate: today,
     message,
@@ -436,7 +480,7 @@ export const processFingerprintAttendanceScan = async (input: {
     employeeName: String((employee as any).name || ""),
     eventType: "check_in" as const,
     attendanceId,
-    matchScore: match.match_score,
+    matchScore: match.score,
     message,
     alreadyCheckedIn: false,
   };
@@ -471,7 +515,15 @@ export const listFingerprintAttendanceLogs = async (
 };
 
 export const getFingerprintScannerStatus = async () => {
-  return getScannerBridgeStatus();
+  // The physical reader now lives in the user's browser (DigitalPersona
+  // WebSDK), so backend "status" reflects whether the server-side matching
+  // engine is ready. The frontend separately checks the browser reader.
+  const matcher = await getMatcherStatus();
+  return {
+    available: matcher.available,
+    engine: matcher.engine,
+    error: matcher.error,
+  };
 };
 
 export { FINGER_POSITIONS, RECOMMENDED_FINGER_POSITIONS, MAX_FINGERS_PER_EMPLOYEE };

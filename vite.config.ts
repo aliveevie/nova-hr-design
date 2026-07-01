@@ -16,6 +16,10 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // @digitalpersona/devices does `import 'WebSdk'` (side-effect only) and
+      // uses the global WebSdk provided by the script tag in index.html. Point
+      // the bare specifier at an empty shim so the bundler can resolve it.
+      WebSdk: path.resolve(__dirname, "./src/lib/websdk-shim.ts"),
     },
   },
 }));

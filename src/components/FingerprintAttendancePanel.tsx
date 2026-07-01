@@ -1,11 +1,17 @@
 import { useEffect, useState } from "react";
-import { Fingerprint, UserPlus } from "lucide-react";
+import { Fingerprint, UserPlus, Download } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { fingerprintApi, getFingerprintErrorCode } from "@/lib/api/fingerprint.api";
+import {
+  captureFingerprintImage,
+  listReaders,
+  FingerprintReaderError,
+  LITE_CLIENT_DOWNLOAD_URL,
+} from "@/lib/fingerprintReader";
 import { FingerprintEnrollmentWizard } from "@/components/FingerprintEnrollmentWizard";
 
 type Props = {
@@ -14,24 +20,40 @@ type Props = {
 
 export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
   const { toast } = useToast();
-  const [available, setAvailable] = useState<boolean | null>(null);
-  const [deviceName, setDeviceName] = useState<string | null>(null);
+  const [readerAvailable, setReaderAvailable] = useState<boolean | null>(null);
+  const [matcherAvailable, setMatcherAvailable] = useState<boolean | null>(null);
+  const [needsClient, setNeedsClient] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
   const [enrollOpen, setEnrollOpen] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
 
+  const available = Boolean(readerAvailable && matcherAvailable);
+
   const load = async () => {
+    // Reader lives in the browser (DigitalPersona client); matcher lives on the
+    // backend. Check both independently.
     try {
-      const [status, logRes] = await Promise.all([
-        fingerprintApi.getStatus(),
-        fingerprintApi.listAttendanceLogs(today),
-      ]);
-      setAvailable(status.available);
-      setDeviceName(status.device_name ?? null);
+      const readers = await listReaders();
+      setReaderAvailable(readers.length > 0);
+      setNeedsClient(false);
+    } catch (e) {
+      setReaderAvailable(false);
+      if (e instanceof FingerprintReaderError && e.code === "NO_CLIENT") setNeedsClient(true);
+    }
+
+    try {
+      const status = await fingerprintApi.getStatus();
+      setMatcherAvailable(status.available);
+    } catch {
+      setMatcherAvailable(false);
+    }
+
+    try {
+      const logRes = await fingerprintApi.listAttendanceLogs(today);
       setLogs(logRes.logs);
     } catch {
-      setAvailable(false);
+      /* logs are non-critical */
     }
   };
 
@@ -44,10 +66,9 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
   const scan = async () => {
     setScanning(true);
     try {
-      const result = await fingerprintApi.scanAttendance();
-      const title = result.alreadyCheckedIn
-        ? "Already checked in"
-        : "Checked in";
+      const { imageB64 } = await captureFingerprintImage();
+      const result = await fingerprintApi.scanAttendance({ imageB64 });
+      const title = result.alreadyCheckedIn ? "Already checked in" : "Checked in";
       toast({
         title,
         description: `${result.employeeName} — ${result.message}`,
@@ -55,6 +76,15 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
       await load();
       onScanComplete?.();
     } catch (e: any) {
+      if (e instanceof FingerprintReaderError) {
+        if (e.code === "NO_CLIENT") setNeedsClient(true);
+        toast({
+          title: "Reader problem",
+          description: e.message,
+          variant: "destructive",
+        });
+        return;
+      }
       const code = getFingerprintErrorCode(e);
       if (code === "UNKNOWN_FINGERPRINT" || code === "NO_ENROLLMENTS") {
         setEnrollOpen(true);
@@ -67,7 +97,7 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
       if (code === "OUTSIDE_HOURS") {
         toast({
           title: "Outside office hours",
-          description: e.message || "Attendance is open 9:00 AM – 5:00 PM.",
+          description: e.message || "Attendance is only open during office hours.",
           variant: "destructive",
         });
         return;
@@ -91,23 +121,42 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
             Fingerprint attendance
           </CardTitle>
           <CardDescription>
-            Scan any enrolled finger between 9:00 AM and 5:00 PM to check in. Sign-out happens
-            automatically at 5:00 PM. Unknown fingers open enrollment.
+            Scan any enrolled finger during office hours to check in. Sign-out happens
+            automatically at close time. Unknown fingers open enrollment.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {available === false && (
+          {needsClient && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 space-y-2">
+              <p>
+                To use the fingerprint reader on this device, install the free DigitalPersona
+                client once, then plug in the reader and reload this page.
+              </p>
+              <Button asChild variant="outline" size="sm">
+                <a href={LITE_CLIENT_DOWNLOAD_URL} target="_blank" rel="noreferrer">
+                  <Download className="h-4 w-4 mr-2" />
+                  Download DigitalPersona client
+                </a>
+              </Button>
+            </div>
+          )}
+          {!needsClient && readerAvailable === false && (
             <p className="text-sm text-destructive">
-              Scanner not available — backend must run on the PC with the USB fingerprint reader attached.
+              No fingerprint reader detected on this device. Plug in the reader and reload.
             </p>
           )}
-          {available && deviceName && (
-            <p className="text-sm text-muted-foreground">Device: {deviceName}</p>
+          {matcherAvailable === false && (
+            <p className="text-sm text-destructive">
+              Server fingerprint engine is unavailable. Contact your administrator.
+            </p>
+          )}
+          {available && (
+            <p className="text-sm text-muted-foreground">Reader ready on this device.</p>
           )}
 
           <div className="flex flex-wrap gap-2">
             <Button onClick={scan} disabled={!available || scanning} size="lg">
-              {scanning ? "Scan finger now…" : "Scan fingerprint for attendance"}
+              {scanning ? "Place finger on reader now…" : "Scan fingerprint for attendance"}
             </Button>
             <Button
               variant="outline"

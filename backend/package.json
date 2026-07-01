@@ -16,6 +16,7 @@
     "verify:invite-submit": "tsx scripts/verify-invite-submit-validation.ts",
     "migrate:leave-requests": "tsx scripts/apply-leave-requests-migration.ts",
     "migrate:fingerprint": "tsx scripts/apply-fingerprint-migration.ts",
+    "migrate:sourceafis": "tsx scripts/apply-sourceafis-migration.ts",
     "migrate:attendance-session": "tsx scripts/apply-attendance-session-migration.ts",
     "migrate:office-hours-defaults": "tsx scripts/apply-office-hours-defaults-migration.ts",
     "verify:fingerprint-e2e": "tsx scripts/verify-fingerprint-attendance-e2e.ts",
