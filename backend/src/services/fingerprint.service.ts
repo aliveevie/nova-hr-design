@@ -33,11 +33,36 @@ import {
 export class FingerprintScanError extends Error {
   code: string;
   statusCode: number;
+  details?: Record<string, unknown>;
 
-  constructor(message: string, code: string, statusCode = 400) {
+  constructor(
+    message: string,
+    code: string,
+    statusCode = 400,
+    details?: Record<string, unknown>
+  ) {
     super(message);
     this.code = code;
     this.statusCode = statusCode;
+    this.details = details;
+  }
+}
+
+export class FingerprintEnrollError extends Error {
+  code: string;
+  statusCode: number;
+  details?: Record<string, unknown>;
+
+  constructor(
+    message: string,
+    code: string,
+    statusCode = 409,
+    details?: Record<string, unknown>
+  ) {
+    super(message);
+    this.code = code;
+    this.statusCode = statusCode;
+    this.details = details;
   }
 }
 
@@ -189,6 +214,17 @@ export const enrollEmployeeFingerprint = async (input: {
     );
   }
 
+  const adminOwnerId = String((employee as any).admin_owner_id ?? "");
+  if (adminOwnerId) {
+    await assertFingerprintNotAlreadyRegistered({
+      adminOwnerId,
+      employeeId: input.employeeId,
+      fingerPosition: input.fingerPosition,
+      imageB64: input.imageB64,
+      dpi,
+    });
+  }
+
   if (!isSupabaseEnabled) throw new Error("Fingerprint enrollment requires database");
 
   const sql = getSql()!;
@@ -293,6 +329,52 @@ const loadTemplatesForAdmin = async (adminOwnerId: string) => {
   `;
 };
 
+/** Reject enrollment when this physical finger is already registered (any employee). */
+const assertFingerprintNotAlreadyRegistered = async (input: {
+  adminOwnerId: string;
+  employeeId: string;
+  fingerPosition: string;
+  imageB64: string;
+  dpi: number;
+}) => {
+  const allTemplates = await loadTemplatesForAdmin(input.adminOwnerId);
+  const gallery = allTemplates
+    .filter(
+      (t: any) =>
+        !(
+          String(t.employee_id) === input.employeeId &&
+          String(t.finger_position) === input.fingerPosition
+        )
+    )
+    .map((t: any) => ({
+      id: String(t.id),
+      template_b64: Buffer.from(t.template_data).toString("base64"),
+    }));
+
+  if (!gallery.length) return;
+
+  const match = await identifyAgainstGallery(input.imageB64, gallery, { dpi: input.dpi });
+  if (!match.success) return;
+
+  const owner = allTemplates.find((t: any) => String(t.id) === match.template_id);
+  const ownerName = owner ? String(owner.employee_name || "another employee") : "another employee";
+  const ownerId = owner ? String(owner.employee_id) : "";
+  const sameEmployee = ownerId === input.employeeId;
+
+  throw new FingerprintEnrollError(
+    sameEmployee
+      ? `This fingerprint is already registered for ${ownerName} under another finger slot. Use a different finger.`
+      : `This fingerprint is already registered for ${ownerName}. Each finger can only belong to one employee.`,
+    "FINGERPRINT_ALREADY_TAKEN",
+    409,
+    {
+      employeeId: ownerId,
+      employeeName: ownerName,
+      matchScore: match.score,
+    }
+  );
+};
+
 export const logFingerprintEvent = async (data: {
   employeeId?: string | null;
   templateId?: string | null;
@@ -360,7 +442,7 @@ export const processFingerprintAttendanceScan = async (input: {
     throw new FingerprintScanError(
       "No fingerprints enrolled yet. Register employees using the enrollment wizard.",
       "NO_ENROLLMENTS",
-      404
+      422
     );
   }
 
@@ -378,17 +460,19 @@ export const processFingerprintAttendanceScan = async (input: {
       scannerId: input.scannerId ?? null,
       eventType: "identify_failed",
       message: match.error,
+      matchScore: match.best_score ?? null,
     });
     throw new FingerprintScanError(
-      "Fingerprint not recognized. Register this finger for an employee.",
+      "Fingerprint not recognized. Register this finger for an employee, or scan a finger that was already enrolled.",
       "UNKNOWN_FINGERPRINT",
-      404
+      422,
+      { bestScore: match.best_score ?? null }
     );
   }
 
   const matched = templates.find((t: any) => String(t.id) === match.template_id);
   if (!matched) {
-    throw new FingerprintScanError("Matched template not found", "UNKNOWN_FINGERPRINT", 404);
+    throw new FingerprintScanError("Matched template not found", "UNKNOWN_FINGERPRINT", 422);
   }
 
   const employeeId = String(matched.employee_id);

@@ -27,6 +27,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   fingerprintApi,
+  getFingerprintErrorCode,
   RecommendedFinger,
   EnrollmentOverviewEmployee,
   FingerprintTemplate,
@@ -207,6 +208,15 @@ export const FingerprintEnrollmentWizard = ({
         toast({
           title: "Reader problem",
           description: e.message,
+          variant: "destructive",
+        });
+        return;
+      }
+      const code = getFingerprintErrorCode(e);
+      if (code === "FINGERPRINT_ALREADY_TAKEN") {
+        toast({
+          title: "Fingerprint already taken",
+          description: e.message || "This finger is already registered to another employee.",
           variant: "destructive",
         });
         return;

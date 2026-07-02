@@ -11,6 +11,7 @@ import {
   getFingerprintScannerStatus,
   getEnrollmentOverviewForAdmin,
   FingerprintScanError,
+  FingerprintEnrollError,
   RECOMMENDED_FINGER_POSITIONS,
   MAX_FINGERS_PER_EMPLOYEE,
   FINGER_POSITIONS,
@@ -185,6 +186,13 @@ export const enrollEmployeeFingerprintController = async (req: AuthRequest, res:
     });
   } catch (e: any) {
     console.error("enrollEmployeeFingerprintController:", e);
+    if (e instanceof FingerprintEnrollError) {
+      return res.status(e.statusCode).json({
+        error: e.message,
+        code: e.code,
+        ...(e.details ?? {}),
+      });
+    }
     const msg = String(e?.message || "");
     if (msg.includes("already has") || msg.includes("already enrolled")) {
       return res.status(409).json({ error: msg, code: "DUPLICATE_ENROLLMENT" });
@@ -236,6 +244,7 @@ export const scanAttendanceController = async (req: AuthRequest, res: Response) 
       return res.status(e.statusCode).json({
         error: e.message,
         code: e.code,
+        ...(e.details ?? {}),
       });
     }
     const msg = String(e?.message || "");

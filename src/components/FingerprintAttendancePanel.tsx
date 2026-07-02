@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { Fingerprint, UserPlus, Download } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { fingerprintApi, getFingerprintErrorCode } from "@/lib/api/fingerprint.api";
 import {
@@ -29,9 +27,7 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
   const [scanning, setScanning] = useState(false);
   const [scanHint, setScanHint] = useState<string | null>(null);
   const [readerInfo, setReaderInfo] = useState<ReaderInfo | null>(null);
-  const [logs, setLogs] = useState<any[]>([]);
   const [enrollOpen, setEnrollOpen] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
 
   const available = Boolean(readerAvailable && matcherAvailable);
 
@@ -57,13 +53,6 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
       setMatcherAvailable(status.available);
     } catch {
       setMatcherAvailable(false);
-    }
-
-    try {
-      const logRes = await fingerprintApi.listAttendanceLogs(today);
-      setLogs(logRes.logs);
-    } catch {
-      /* logs are non-critical */
     }
   };
 
@@ -111,11 +100,29 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
         return;
       }
       const code = getFingerprintErrorCode(e);
-      if (code === "UNKNOWN_FINGERPRINT" || code === "NO_ENROLLMENTS") {
+      if (code === "NO_ENROLLMENTS") {
         setEnrollOpen(true);
         toast({
-          title: "Unknown fingerprint",
-          description: "Select the employee and register this finger using the guided steps.",
+          title: "No fingerprints registered yet",
+          description: "Register at least one employee fingerprint, then scan again.",
+        });
+        return;
+      }
+      if (code === "UNKNOWN_FINGERPRINT") {
+        setEnrollOpen(true);
+        toast({
+          title: "Fingerprint not recognized",
+          description:
+            e.message ||
+            "Scan a finger that was enrolled, or register this finger for an employee.",
+        });
+        return;
+      }
+      if (code === "ALREADY_CHECKED_OUT") {
+        toast({
+          title: "Already checked out",
+          description: e.message || "You are already signed out for today.",
+          variant: "destructive",
         });
         return;
       }
@@ -152,6 +159,28 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-md border border-blue-200 bg-blue-50/80 p-3 text-sm text-blue-950 space-y-2">
+            <p className="font-medium">Windows scanner setup (one-time per PC)</p>
+            <p className="text-blue-900/90">
+              Install the Lite Client, then the DigitalPersona driver below. If the reader lights up
+              but the website never captures your finger, the wrong driver (Windows Hello / WBF) is
+              usually installed — use the non-WBF driver link and reboot.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline" size="sm">
+                <a href={LITE_CLIENT_DOWNLOAD_URL} target="_blank" rel="noreferrer">
+                  <Download className="h-4 w-4 mr-2" />
+                  Lite Client
+                </a>
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <a href={NON_WBF_DRIVER_URL} target="_blank" rel="noreferrer">
+                  <Download className="h-4 w-4 mr-2" />
+                  U.are.U driver (non-WBF)
+                </a>
+              </Button>
+            </div>
+          </div>
           {needsClient && (
             <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 space-y-2">
               <p>
@@ -214,34 +243,6 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
 
           {scanning && scanHint && (
             <p className="text-sm text-primary font-medium">{scanHint}</p>
-          )}
-
-          {logs.length > 0 && (
-            <div className="pt-4">
-              <h4 className="text-sm font-medium mb-2">Today&apos;s fingerprint scans</h4>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Employee</TableHead>
-                    <TableHead>Event</TableHead>
-                    <TableHead>Score</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {logs.map((l) => (
-                    <TableRow key={l.id}>
-                      <TableCell>{new Date(l.createdAt).toLocaleTimeString()}</TableCell>
-                      <TableCell>{l.employeeName || "—"}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{l.eventType}</Badge>
-                      </TableCell>
-                      <TableCell>{l.matchScore != null ? l.matchScore.toFixed(2) : "—"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
           )}
         </CardContent>
       </Card>
