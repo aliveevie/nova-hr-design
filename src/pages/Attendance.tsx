@@ -78,19 +78,29 @@ const Attendance = () => {
   }, []);
 
   const loadDaily = useCallback(async () => {
-    try {
-      setLoadingDaily(true);
-      const data = await attendanceApi.getDaily(selectedDate, selectedDept);
-      setDaily(data);
-    } catch (e: any) {
-      toast({
-        title: "Could not load attendance",
-        description: e?.message || "Please refresh and try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoadingDaily(false);
+    setLoadingDaily(true);
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const data = await attendanceApi.getDaily(selectedDate, selectedDept);
+        setDaily(data);
+        setLoadingDaily(false);
+        return;
+      } catch (e) {
+        lastError = e;
+        if (attempt === 0) {
+          await new Promise((r) => window.setTimeout(r, 1500));
+        }
+      }
     }
+    toast({
+      title: "Could not load attendance",
+      description:
+        (lastError as Error)?.message ||
+        "Database may be slow — refresh the page or try again in a moment.",
+      variant: "destructive",
+    });
+    setLoadingDaily(false);
   }, [selectedDate, selectedDept, toast]);
 
   const loadOffice = useCallback(async () => {

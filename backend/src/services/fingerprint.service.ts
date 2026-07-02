@@ -181,6 +181,7 @@ export const enrollEmployeeFingerprint = async (input: {
   const dpi = input.dpi ?? FINGERPRINT_DPI;
   const extracted = await extractTemplateFromImage(input.imageB64, dpi);
   if (!extracted.success) {
+    console.error("[fingerprint] template extract failed:", extracted.error, { dpi });
     throw new Error(
       extracted.error === "matcher_unavailable"
         ? "Fingerprint matching engine unavailable on the server."

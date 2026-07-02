@@ -180,10 +180,15 @@ export const FingerprintEnrollmentWizard = ({
     setEnrolling(true);
     setLastSuccess(null);
     try {
-      const { imageB64 } = await captureFingerprintImage();
+      const { imageB64, dpi } = await captureFingerprintImage({
+        onQuality: (hint) => {
+          if (hint) toast({ title: "Adjust finger", description: hint });
+        },
+      });
       const res = await fingerprintApi.enrollEmployee(empId, {
         fingerPosition: nextFinger.value,
         imageB64,
+        dpi,
       });
       setLastSuccess(res.fingerLabel || nextFinger.label);
       toast({

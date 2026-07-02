@@ -143,6 +143,9 @@ export const enrollEmployeeFingerprintController = async (req: AuthRequest, res:
     if (!imageB64) {
       return res.status(400).json({ error: "imageB64 (captured fingerprint) is required" });
     }
+    console.info(
+      `[fingerprint] enroll request employee=${employeeId} finger=${fingerPosition} imageBytes≈${Math.round(String(imageB64).length * 0.75)} dpi=${dpi ?? "default"}`
+    );
 
     const emp = await getEmployeeById(employeeId);
     if (!emp) return res.status(404).json({ error: "Employee not found" });
@@ -217,6 +220,9 @@ export const scanAttendanceController = async (req: AuthRequest, res: Response) 
     if (!imageB64) {
       return res.status(400).json({ error: "imageB64 (captured fingerprint) is required", code: "NO_IMAGE" });
     }
+    console.info(
+      `[fingerprint] scan request imageBytes≈${Math.round(String(imageB64).length * 0.75)} dpi=${dpi ?? "default"}`
+    );
     const result = await processFingerprintAttendanceScan({
       adminOwnerId: getAdminOwnerId(req),
       scannerId: scannerId ?? null,

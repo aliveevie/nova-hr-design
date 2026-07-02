@@ -30,8 +30,9 @@ export const getSql = () => {
 
     sql = postgres(connectionString, {
       max: 10,
-      idle_timeout: 20,
-      connect_timeout: 10,
+      idle_timeout: 30,
+      connect_timeout: 30,
+      max_lifetime: 60 * 30,
       ssl: /aivencloud\.com/i.test(connectionString)
         ? (ca
             ? { rejectUnauthorized: true, ca }

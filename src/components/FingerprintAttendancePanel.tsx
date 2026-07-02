@@ -8,9 +8,12 @@ import { useToast } from "@/hooks/use-toast";
 import { fingerprintApi, getFingerprintErrorCode } from "@/lib/api/fingerprint.api";
 import {
   captureFingerprintImage,
+  getReaderInfo,
   listReaders,
   FingerprintReaderError,
   LITE_CLIENT_DOWNLOAD_URL,
+  NON_WBF_DRIVER_URL,
+  type ReaderInfo,
 } from "@/lib/fingerprintReader";
 import { FingerprintEnrollmentWizard } from "@/components/FingerprintEnrollmentWizard";
 
@@ -24,6 +27,8 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
   const [matcherAvailable, setMatcherAvailable] = useState<boolean | null>(null);
   const [needsClient, setNeedsClient] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [scanHint, setScanHint] = useState<string | null>(null);
+  const [readerInfo, setReaderInfo] = useState<ReaderInfo | null>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [enrollOpen, setEnrollOpen] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
@@ -37,6 +42,11 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
       const readers = await listReaders();
       setReaderAvailable(readers.length > 0);
       setNeedsClient(false);
+      if (readers.length > 0) {
+        setReaderInfo(await getReaderInfo());
+      } else {
+        setReaderInfo(null);
+      }
     } catch (e) {
       setReaderAvailable(false);
       if (e instanceof FingerprintReaderError && e.code === "NO_CLIENT") setNeedsClient(true);
@@ -65,9 +75,16 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
 
   const scan = async () => {
     setScanning(true);
+    setScanHint("Starting fingerprint reader…");
     try {
-      const { imageB64 } = await captureFingerprintImage();
-      const result = await fingerprintApi.scanAttendance({ imageB64 });
+      const { imageB64, dpi } = await captureFingerprintImage({
+        onQuality: (hint) => {
+          if (hint) setScanHint(hint);
+        },
+        onStatus: (msg) => setScanHint(msg),
+      });
+      setScanHint(null);
+      const result = await fingerprintApi.scanAttendance({ imageB64, dpi });
       const title = result.alreadyCheckedIn ? "Already checked in" : "Checked in";
       toast({
         title,
@@ -78,6 +95,14 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
     } catch (e: any) {
       if (e instanceof FingerprintReaderError) {
         if (e.code === "NO_CLIENT") setNeedsClient(true);
+        if (e.code === "WBF_DRIVER") {
+          toast({
+            title: "Wrong fingerprint driver",
+            description: e.message,
+            variant: "destructive",
+          });
+          return;
+        }
         toast({
           title: "Reader problem",
           description: e.message,
@@ -109,6 +134,7 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
       });
     } finally {
       setScanning(false);
+      setScanHint(null);
     }
   };
 
@@ -129,21 +155,31 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
           {needsClient && (
             <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 space-y-2">
               <p>
-                To use the fingerprint reader on this device, install the free DigitalPersona
-                client once, then plug in the reader and reload this page.
+                Install the free DigitalPersona client once on this Windows PC, then plug in the
+                reader and reload.
               </p>
               <Button asChild variant="outline" size="sm">
                 <a href={LITE_CLIENT_DOWNLOAD_URL} target="_blank" rel="noreferrer">
                   <Download className="h-4 w-4 mr-2" />
-                  Download DigitalPersona client
+                  Download Lite Client
                 </a>
               </Button>
             </div>
           )}
           {!needsClient && readerAvailable === false && (
-            <p className="text-sm text-destructive">
-              No fingerprint reader detected on this device. Plug in the reader and reload.
-            </p>
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm space-y-2">
+              <p className="text-destructive">
+                No fingerprint reader detected. Plug in the reader and reload.
+              </p>
+              <p className="text-muted-foreground">
+                If the reader works with Windows Hello but not here, you likely have the WBF
+                driver. Install the{" "}
+                <a href={NON_WBF_DRIVER_URL} target="_blank" rel="noreferrer" className="underline">
+                  DigitalPersona non-WBF driver
+                </a>{" "}
+                instead, then reboot.
+              </p>
+            </div>
           )}
           {matcherAvailable === false && (
             <p className="text-sm text-destructive">
@@ -151,12 +187,19 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
             </p>
           )}
           {available && (
-            <p className="text-sm text-muted-foreground">Reader ready on this device.</p>
+            <div className="text-sm text-muted-foreground space-y-1">
+              <p>Reader ready on this device.</p>
+              {readerInfo && (
+                <p className="text-xs">
+                  Device: {String(readerInfo.details?.Name || readerInfo.deviceId)}
+                </p>
+              )}
+            </div>
           )}
 
           <div className="flex flex-wrap gap-2">
             <Button onClick={scan} disabled={!available || scanning} size="lg">
-              {scanning ? "Place finger on reader now…" : "Scan fingerprint for attendance"}
+              {scanning ? "Reading fingerprint…" : "Scan fingerprint for attendance"}
             </Button>
             <Button
               variant="outline"
@@ -168,6 +211,10 @@ export const FingerprintAttendancePanel = ({ onScanComplete }: Props) => {
               Register new fingerprint
             </Button>
           </div>
+
+          {scanning && scanHint && (
+            <p className="text-sm text-primary font-medium">{scanHint}</p>
+          )}
 
           {logs.length > 0 && (
             <div className="pt-4">
